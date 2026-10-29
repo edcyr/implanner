@@ -52,17 +52,32 @@ function sportOf(typeKey = ''): string | null {
   return null;
 }
 
+// Logs status codes and reply shapes only: never the key, the token or workout data.
+const looksLikeHtml = (t: string) => /<html|<!doctype|cloudflare|attention required|just a moment/i.test(t);
+
 async function garminToken(apiKey: string): Promise<string> {
   const r = await fetch(`${GARMIN}/personalapitoken-service/personal-api/personal-api-key/token`, {
     method: 'POST', headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/json' },
   });
   const text = await r.text();
-  if (r.status === 401 || r.status === 403) throw new Error('Garmin turned the key down. It may have expired or been deleted: create a new one in Garmin Connect.');
-  if (!r.ok) throw new Error(`Garmin token request failed (${r.status})`);
+  const type = r.headers.get('content-type') ?? '';
+  if (!r.ok) {
+    const html = looksLikeHtml(text);
+    console.error('garmin token failed', r.status, type || '(no content-type)', html ? '(HTML page)' : `(${text.length} bytes)`);
+    if (r.status === 401) throw new Error('Garmin didn’t recognise the key (401). Check you copied all of it, or create a new one in Garmin Connect.');
+    if (r.status === 403 || html) throw new Error(`Garmin refused the request (${r.status}${html ? ', firewall page' : ''}). It may be blocking requests from Supabase's servers.`);
+    throw new Error(`Garmin token request failed (${r.status})`);
+  }
   let body: any;
   try { body = JSON.parse(text); } catch { body = text.trim(); }
-  const tok = typeof body === 'string' ? body : body.access_token ?? body.accessToken ?? body.token ?? body.value;
-  if (!tok || typeof tok !== 'string') throw new Error(`Unexpected token reply from Garmin (fields: ${typeof body === 'object' ? Object.keys(body).join(', ') : typeof body})`);
+  const tok = typeof body === 'string' ? body
+    : body.access_token ?? body.accessToken ?? body.token ?? body.value ?? body.data?.access_token ?? body.data?.accessToken;
+  const shape = typeof body === 'object' ? Object.keys(body).join(', ') : `text, ${String(body).length} chars`;
+  if (!tok || typeof tok !== 'string') {
+    console.error('garmin token reply not understood', type, shape);
+    throw new Error(`Garmin sent a token reply IMPlanner didn’t understand (${shape}).`);
+  }
+  console.log('garmin token ok', type, shape);
   return tok;
 }
 
@@ -99,7 +114,7 @@ Deno.serve(async (req) => {
       const max = Math.min(8, Math.max(1, Number(body.max) || 6));
       const q = new URLSearchParams({ start: '0', limit: '100', startDate: body.since, endDate: body.until, sortOrder: 'asc', excludeChildren: 'true' });
       const lr = await fetch(`${GARMIN}/activitylist-service/activities/search/activities?${q}`, { headers: { ...auth, Accept: 'application/json' } });
-      if (!lr.ok) throw new Error(`Garmin activity list failed (${lr.status})`);
+      if (!lr.ok) { console.error('garmin list failed', lr.status, lr.headers.get('content-type')); throw new Error(`Garmin activity list failed (${lr.status})`); }
       const list: any[] = await lr.json();
       const wanted = list.filter(a => sportOf(a.activityType?.typeKey) && !known.has(String(a.activityId)));
       const out = [];
@@ -107,12 +122,13 @@ Deno.serve(async (req) => {
         const fr = await fetch(`${GARMIN}/download-service/files/activity/${a.activityId}`, {
           headers: { ...auth, Accept: 'application/x-zip-compressed, application/zip, application/octet-stream' },
         });
-        if (!fr.ok) throw new Error(`Garmin file download failed (${fr.status}) for activity ${a.activityId}`);
+        if (!fr.ok) { console.error('garmin file failed', fr.status, a.activityId); throw new Error(`Garmin file download failed (${fr.status}) for activity ${a.activityId}`); }
         out.push({
           id: String(a.activityId), name: a.activityName ?? '', type: a.activityType?.typeKey ?? '',
           startLocal: a.startTimeLocal ?? null, file: base64(new Uint8Array(await fr.arrayBuffer())),
         });
       }
+      console.log('garmin sync', list.length, 'listed,', wanted.length, 'new,', out.length, 'sent');
       await admin.rpc('garmin_mark', { uid: user.id, ok: true, err: null });
       return json(req, { activities: out, more: wanted.length > out.length });
     }

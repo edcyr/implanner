@@ -79,8 +79,10 @@ export async function mountGarminCard(root) {
       try {
         await store.garmin({ action: 'test' });
       } catch (err) {
-        await store.garminDisconnect().catch(() => {});
-        throw new Error(`Garmin didn’t accept that key: ${err.message}`);
+        // Keep the key so the problem can be fixed (or the key replaced) without pasting it again.
+        toast(`Saved, but Garmin didn’t accept it yet: ${err.message}`);
+        rerender();
+        return;
       }
       toast('Garmin connected. Fetching your last two weeks…');
       const r = await syncGarmin({ force: true });
