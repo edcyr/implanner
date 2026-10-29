@@ -26,7 +26,7 @@ export function render([id]) {
   <div class="page-head">
     <div class="row" style="align-items:flex-start;gap:14px">${sportIcon(sp)}
       <div><h1>${esc(a.title || SPORTS[sp].label)}</h1>
-      <p>${esc(fmtDay(a.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))}${a.start_time ? ` · ${new Date(a.start_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''} · ${a.source === 'manual' ? 'Logged by hand' : `Imported (${esc(a.source.toUpperCase())})`}</p></div></div>
+      <p>${esc(fmtDay(a.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))}${a.start_time ? ` · ${new Date(a.start_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''} · ${a.source === 'manual' ? 'Logged by hand' : a.source === 'garmin' ? 'Synced from Garmin' : `Imported (${esc(a.source.toUpperCase())})`}</p></div></div>
     <div class="row"><button class="btn" data-action="edit">Edit</button><button class="btn ghost danger" data-action="delete">Delete</button></div>
   </div>
 

@@ -7,7 +7,7 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm';
 
 const SESSION_COLS = ['id', 'date', 'sport', 'kind', 'title', 'description', 'duration_min', 'distance_m', 'phase', 'week', 'sort', 'skip_reason'];
-const ACT_COLS = ['id', 'session_id', 'date', 'start_time', 'sport', 'title', 'duration_s', 'source', 'rpe', 'feel', 'notes', 'file_hash'];
+const ACT_COLS = ['id', 'session_id', 'date', 'start_time', 'sport', 'title', 'duration_s', 'source', 'rpe', 'feel', 'notes', 'file_hash', 'external_id'];
 const DETAIL_COLS = ['distance_m', 'elapsed_s', 'avg_hr', 'max_hr', 'avg_power', 'np', 'avg_cadence', 'ascent_m', 'calories', 'pool_length_m', 'zones'];
 const pick = (o, keys) => Object.fromEntries(keys.filter(k => o[k] !== undefined).map(k => [k, o[k]]));
 const chunks = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
@@ -198,6 +198,19 @@ const cloud = {
   },
   async addCheer(c) { return must(await sb.from('cheers').insert({ ...c, from_user: this.user.id }).select().single()); },
   async removeCheer(id) { must(await sb.from('cheers').delete().eq('id', id)); },
+  // -- Garmin Connect (Personal API key kept in Supabase Vault; see supabase/garmin.sql)
+  async garminStatus() { return must(await sb.rpc('garmin_status'))?.[0] || null; },
+  async garminConnect(apiKey, expires) { must(await sb.rpc('garmin_connect', { api_key: apiKey, expires })); },
+  async garminDisconnect() { must(await sb.rpc('garmin_disconnect')); },
+  async garmin(body) {
+    const { data, error } = await sb.functions.invoke('garmin', { body });
+    if (error) {
+      let msg = error.message;
+      try { const j = await error.context?.json(); if (j?.error || j?.message || j?.msg) msg = j.error || j.message || j.msg; } catch { /* not JSON */ }
+      throw new Error(msg);
+    }
+    return data;
+  },
   async profilesById(ids) {
     if (!ids.length) return {};
     const rows = must(await sb.from('profiles').select('id,name').in('id', ids));

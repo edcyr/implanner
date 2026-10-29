@@ -5,6 +5,7 @@ import { state, load, hasPlan, isCloud } from './state.js';
 import { initModal, initTooltips, toast, daysTo, openModal, closeModal } from './ui.js';
 import { setRerender } from './nav.js';
 import { esc } from './util.js';
+import { syncGarmin, syncMessage } from './garmin.js';
 import * as today from './views/today.js';
 import * as season from './views/season.js';
 import * as log from './views/log.js';
@@ -97,6 +98,15 @@ function route() {
   return show(ROUTES[name], params, name);
 }
 
+// Pull new Garmin workouts in the background (at most every 10 minutes; quiet unless something arrives).
+async function autoSync() {
+  if (!isCloud() || !store.user || !hasPlan()) return;
+  try {
+    const r = await syncGarmin();
+    if (r?.connected && !r.skipped && r.added + r.filled > 0) { toast(syncMessage(r)); rerender(); }
+  } catch (e) { console.warn('Garmin sync:', e.message); }
+}
+
 function askNewPassword() {
   openModal({
     title: 'Choose a new password',
@@ -138,7 +148,8 @@ async function boot() {
       if (user && user.id !== loadedFor) {
         loadedFor = user.id;
         try { await load(); } catch (e) { toast(e.message); }
-        route();
+        await route();
+        autoSync();
       } else if (!user && loadedFor) {
         loadedFor = null;
         Object.assign(state, { profile: null, sessions: [], activities: [], crews: null });
@@ -151,7 +162,9 @@ async function boot() {
     catch (e) { main.innerHTML = `<div class="empty"><h3>Couldn't load your training</h3><p>${esc(e.message)}</p><p style="margin-top:12px"><button class="btn" onclick="location.reload()">Try again</button></p></div>`; return; }
   }
   addEventListener('hashchange', route);
-  route();
+  await route();
+  autoSync();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoSync(); });
 }
 
 boot();

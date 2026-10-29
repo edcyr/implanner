@@ -1,5 +1,7 @@
-import { esc, today, mondayOf, fmtDay, fmtRange, addDays, fmtHMS, fmtDist, fmtMin, fmtPace, SPORTS, sportIcon, icon } from '../util.js';
-import { state, saveActivity, saveSession, sessionById, isDuplicate, sessionsBetween, activitiesFor } from '../state.js';
+import { esc, today, mondayOf, fmtDay, fmtRange, addDays, fmtHMS, fmtDist, fmtMin, fmtPace, SPORTS, sportIcon, icon, timeAgo } from '../util.js';
+import { state, saveActivity, saveSession, sessionById, isDuplicate, sessionsBetween, activitiesFor, isCloud } from '../state.js';
+import { store } from '../store.js';
+import { syncGarmin, syncMessage } from '../garmin.js';
 import { bestMatch } from '../compliance.js';
 import { readWorkoutFiles } from '../importer.js';
 import { toast, feelChip } from '../ui.js';
@@ -63,6 +65,7 @@ export function render() {
     <div class="row"><button class="btn primary" data-action="swim">Log a swim</button><button class="btn" data-action="manual">Log another workout</button></div></div>
 
   <section class="card">
+    ${isCloud() ? '<div class="spread" data-garmin-line style="margin-bottom:12px"><span class="muted small">Checking Garmin…</span></div>' : ''}
     <div class="dropzone" data-drop tabindex="0" role="button" aria-label="Choose Garmin files to import">
       ${icon('other')}
       <h3>${busy ? 'Reading files…' : 'Drop Garmin files here'}</h3>
@@ -109,7 +112,21 @@ async function handleFiles(files) {
   rerender();
 }
 
+async function garminLine(root) {
+  const el = root.querySelector('[data-garmin-line]');
+  if (!el) return;
+  try {
+    const st = await store.garminStatus();
+    el.innerHTML = st
+      ? `<span class="small"><span class="badge st-on"><span class="mk" aria-hidden="true">✓</span>Garmin connected</span>
+          <span class="muted" style="margin-left:6px">${st.last_error ? `Last sync failed: ${esc(st.last_error)}` : st.last_sync_at ? `synced ${esc(timeAgo(st.last_sync_at))}` : 'not synced yet'}</span></span>
+         <button class="btn small" data-action="garmin-sync">Sync now</button>`
+      : `<span class="muted small">Tired of exporting files? <a href="#/settings/garmin">Connect Garmin</a> and workouts arrive on their own.</span>`;
+  } catch { el.remove(); }
+}
+
 export function mount(root) {
+  garminLine(root);
   const dz = root.querySelector('[data-drop]'), input = root.querySelector('[data-file]');
   dz.addEventListener('click', () => input.click());
   dz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
@@ -125,6 +142,11 @@ export function mount(root) {
 }
 
 export const actions = {
+  'garmin-sync': async el => {
+    el.disabled = true; el.textContent = 'Syncing…';
+    try { toast(syncMessage(await syncGarmin({ force: true })) || 'Done'); } catch (e) { toast(e.message); }
+    rerender();
+  },
   swim: () => openLogForm({ sport: 'swim', session: state.sessions.find(s => s.date === today() && s.sport === 'swim' && !activitiesFor(s.id).length) || null }),
   manual: () => openLogForm({ sport: 'run' }),
   clear: () => { pending = []; failures = []; rerender(); },

@@ -4,6 +4,7 @@ import { store, localStore } from '../store.js';
 import { toast, confirmDialog, openModal, closeModal } from '../ui.js';
 import { planFields, readPlanFields, validatePlan, planPreview, drawPreview } from './setup.js';
 import { rerender, go } from '../nav.js';
+import { garminCardHtml, mountGarminCard } from './garmin-card.js';
 
 export const title = 'Settings';
 const THEME_KEY = 'implanner:theme';
@@ -53,6 +54,8 @@ export function render() {
       <button class="btn primary">Rebuild plan</button></div>
   </form>
 
+  ${isCloud() ? garminCardHtml() : ''}
+
   ${isCloud() ? `<form class="card stack" data-form="sharing" style="margin-top:16px">
     <h2>What your crew sees</h2>
     <p class="muted small">Always shared: your plan, which sessions you completed or skipped (and why), their length, how they felt, and your notes.</p>
@@ -81,7 +84,8 @@ export function render() {
 }
 
 export function mount(root, params) {
-  if (params[0] === 'plan') requestAnimationFrame(() => root.querySelector('#plan')?.scrollIntoView({ block: 'start' }));
+  if (params[0] === 'plan' || params[0] === 'garmin') requestAnimationFrame(() => root.querySelector(`#${params[0]}`)?.scrollIntoView({ block: 'start' }));
+  if (isCloud()) mountGarminCard(root);
   const planForm = root.querySelector('[data-form="plan"]');
   const prev = planForm.querySelector('[data-preview]'), chartEl = planForm.querySelector('[data-chart="preview"]');
   const update = () => { const { html, weeks } = planPreview(readPlanFields(planForm), state.profile.race_date); prev.innerHTML = html; drawPreview(chartEl, weeks); };

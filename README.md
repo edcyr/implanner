@@ -7,7 +7,7 @@ Built for IRONMAN Canada–Ottawa (Sunday, August 8, 2027), but any race and dat
 ## What it does
 
 - **Plan**: builds a periodized season (prep → base → build → peak → taper → race week) from your race date, current and peak weekly hours, rest day, long-ride and long-run days, swims per week, and optional strength work. Easier weeks every 3rd or 4th week. Every session is editable; drag sessions between days on the Plan page.
-- **Log**: import Garmin rides and runs (`.fit`, Garmin's `.zip` "Export Original", `.tcx`, `.gpx`, several at once; multisport files are split into legs). Log swims by hand (time, distance, pool length). Each workout is matched to the planned session for that day and sport, and you can change the match.
+- **Log**: sync workouts automatically from Garmin Connect (see [Garmin](#garmin)), or import Garmin rides and runs (`.fit`, Garmin's `.zip` "Export Original", `.tcx`, `.gpx`, several at once; multisport files are split into legs). Log swims by hand (time, distance, pool length). Each workout is matched to the planned session for that day and sport, and you can change the match.
 - **Adherence**: every session is marked *On plan* (within about ±20 % of the planned time, or distance for swims), *Close* (within about ±50 %), *Off plan*, *Missed* or *Skipped* (with a reason). The weekly and season scores are weighted by planned time.
 - **Crew**: create a crew, share the invite link, and see each member's week against their own plan, the sessions they finished or skipped, how they felt, and their notes. Send a 👏 💪 🙌 ❤️ 🫂 or a short message.
 - **Progress**: season adherence, on-plan streak, weekly hours by sport against plan, time in heart-rate and power zones (if you enter your thresholds).
@@ -43,6 +43,9 @@ js/dialogs.js, ui.js  shared dialogs and components
 js/views/*.js         one file per page
 supabase/schema.sql   database tables, functions and privacy rules
 supabase/rls-test.sql privacy-rule test (rolls itself back)
+supabase/garmin.sql   Garmin key storage (Vault) and sync bookkeeping
+supabase/functions/garmin/index.ts   Edge Function that fetches workouts from Garmin
+js/garmin.js          sync: decode, match to plan, merge, save
 ```
 
 Libraries load from jsDelivr at pinned versions: `@supabase/supabase-js@2.117.3`, and `@garmin/fitsdk@21.217.0` (only when you import a FIT file).
@@ -74,7 +77,23 @@ To set up a fresh project:
 
 ## Garmin
 
-The app imports files rather than syncing automatically, because Garmin's Connect API is only open to approved business partners. To get files:
+### Automatic sync (Garmin Personal API)
+
+Each person can connect their own Garmin account in **Settings → Garmin Connect**:
+
+1. Open the [Personal API Key page](https://connect.garmin.com/app/settings/personalApiToken) in Garmin Connect, select **Create Key**, accept Garmin's terms and pick an expiry (30 days to 1 year).
+2. Paste the key into IMPlanner and select **Connect Garmin**. The last two weeks of workouts come in straight away.
+3. From then on, new swims, rides, runs, bricks and strength sessions are pulled in whenever IMPlanner opens (at most every 10 minutes), or with **Sync now** on the Log page. Walks and other activity types are skipped.
+
+Synced workouts are matched to the plan like imported files. If you'd already marked a session "Done as planned" or logged it by hand, the Garmin data fills in that entry (your notes and feel stay). Each Garmin workout is imported once.
+
+How it works: the key is saved encrypted in Supabase Vault (`supabase/garmin.sql`). Nobody can read it back through the app, its owner included. Only the `garmin` Edge Function (`supabase/functions/garmin/index.ts`) can: it checks who is signed in, swaps the key for a 24-hour Garmin token, and returns that person's new workout files. Garmin doesn't allow browsers to call its API directly, which is why this step runs on the server. The key expires when you chose; renew it in Garmin Connect and use **Replace key**.
+
+Garmin's Personal API is meant for "individual Garmin users who want programmatic access to their own data" and "not intended for commercial applications serving multiple end users". IMPlanner is non-commercial and each person connects only their own data; read the terms Garmin shows when you create a key.
+
+Setting it up on a fresh Supabase project: run `supabase/garmin.sql` after `schema.sql`, then create an Edge Function named `garmin` with the code in `supabase/functions/garmin/index.ts` and turn **off** its "Verify JWT with legacy secret" setting (the function checks the signed-in user itself; Supabase recommends this for projects on the new JWT signing keys).
+
+### Importing files
 
 - **One workout**: on connect.garmin.com, open the activity → gear icon (⚙) → **Export Original**. Drop the downloaded `.zip` on the Log page as it is.
 - **Your whole history**: Garmin account → Data Management → **Export Your Data**. Garmin emails a large zip; drop the `.fit` files from it on the Log page.
