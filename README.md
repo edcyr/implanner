@@ -85,5 +85,11 @@ Duplicates are detected (same file, or same sport and start time) and left untic
 
 Optional, under Settings: bike FTP, bike and run threshold heart rate, run threshold pace, swim CSS. With them, workout descriptions show your watts and paces, and imported workouts show time in zones (heart rate: Friel zones from threshold HR; power: Coggan zones from FTP). After changing them, use **Rebuild plan** to update future workout targets.
 
+## Photos
+
+The landing and setup pages use the owner's own photos from IRONMAN Mont-Tremblant (2012 and 2013), resized and stripped of camera and location data (`img/`). Original files placed in the project folder are kept out of git by `.gitignore`. To change a photo, edit `HERO` in `js/views/auth.js` or the banner in `js/views/setup.js`.
+
+IMPlanner is an independent project. It isn't affiliated with or endorsed by IRONMAN.
+
 The generated plan is a general template built on common Ironman training principles. It isn't medical or coaching advice: check with a doctor before starting, and adjust to how you feel.
 

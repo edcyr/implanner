@@ -1,1 +1,8 @@
 .DS_Store
+# Original photos stay local: only the resized, metadata-free copies in img/ are published
+/*.jpg
+/*.JPG
+/*.jpeg
+/*.JPEG
+/*.heic
+/*.HEIC

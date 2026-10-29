@@ -6,6 +6,7 @@ import { ring, strip, statusBadge, sessionMeta, doneText, feelChip, phaseLabel, 
 import { openSession, openLogForm, openSkip, quickDone } from '../dialogs.js';
 import { store } from '../store.js';
 import { rerender, go } from '../nav.js';
+import { dailyLine } from '../inspire.js';
 
 export const title = 'Today';
 
@@ -17,7 +18,7 @@ function greeting() {
 function sessionCard(s) {
   const st = sessionStatus(s, state.bySession);
   const done = st.acts.length > 0;
-  return `<article class="card session-card">
+  return `<article class="card session-card s-${s.sport}">
     ${sportIcon(s.sport)}
     <div>
       <h3>${esc(s.title)} ${statusBadge(st.status)}</h3>
@@ -53,12 +54,13 @@ export function render() {
     : wk ? `${phaseLabel(wk)} · Week ${wk.index + 1} of ${state.weeks.length}${wk.recovery ? ' · Easier week' : ''}` : 'Season complete';
 
   let html = `
-  <section class="card hero">
+  <section class="card hero vivid">
     <div>
       <div class="kicker">${esc(kicker)}</div>
       <h1>${greeting()}${firstName ? `, ${esc(firstName)}` : ''}</h1>
       <p class="countdown">${left > 0 ? `<b>${left} days</b> to ${esc(p.race_name)}` : left === 0 ? `<b>Race day!</b> Go get it.` : `${esc(p.race_name)} is done. Well raced.`}</p>
-      ${wk ? `<p class="muted small" style="margin-top:6px">${esc(PHASES[wk.phase].blurb)}</p>` : ''}
+      <p class="daily-line">${esc(dailyLine(t, wk?.phase))}</p>
+      ${wk ? `<p class="blurb">${esc(PHASES[wk.phase].label)}: ${esc(PHASES[wk.phase].blurb)}</p>` : ''}
     </div>
     ${before ? `<div class="ring-wrap"><div class="ring-label" style="max-width:220px"><b>Week 1: ${fmtHours(sum.planned)}</b>${weekSessions.length} sessions. Tap one to see the workout.</div></div>`
       : `<div class="ring-wrap">${ring(sum.adherence)}

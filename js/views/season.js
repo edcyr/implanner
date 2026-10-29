@@ -21,7 +21,7 @@ function weekBlock(w, t) {
   let html = `<section class="week-block" id="wk-${w.index}">
     <div class="week-head">
       <h3>Week ${w.index + 1}${isNow ? ' · this week' : ''}</h3>
-      <span class="phase-pill ${w.phase === 'race' ? 'race' : ''}">${esc(phaseLabel(w))}</span>
+      <span class="phase-pill ph-${w.phase}">${esc(phaseLabel(w))}</span>
       ${w.recovery ? '<span class="tag">Easier week</span>' : ''}
       <span class="muted">${fmtRange(w.monday, sun)} · ${fmtHours(sum.planned)} planned</span>
       ${(past || isNow) && sum.adherence != null ? statusBadge(sum.adherence >= 0.85 ? 'on' : sum.adherence >= 0.5 ? 'close' : 'off', `${pctText(sum.adherence)} on plan`) : ''}

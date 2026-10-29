@@ -40,7 +40,7 @@ export function render() {
   return `
   <div class="page-head"><div><h1>Progress</h1><p>How closely you're following your plan. Consistency beats heroics.</p></div></div>
   <section class="grid grid-3">
-    <div class="card"><div class="muted small">Plan followed this season</div><div class="hero-figure" style="margin-top:6px">${pctText(season.adherence)}</div>
+    <div class="card feature"><div class="muted small">Plan followed this season</div><div class="hero-figure" style="margin-top:6px">${pctText(season.adherence)}</div>
       <div class="muted small" style="margin-top:6px">${season.onCount} of ${season.dueCount} sessions on plan</div></div>
     <div class="stats" style="grid-template-columns:1fr 1fr">
       <div class="stat"><div class="label">On-plan streak</div><div class="value">${streak} wk</div><div class="sub">weeks at 80 % or better</div></div>

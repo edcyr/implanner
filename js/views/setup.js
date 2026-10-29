@@ -70,7 +70,12 @@ export async function render() {
   const p = draftProfile();
   const snap = isCloud() ? await localSnapshot() : null;
   return `
-  <div class="page-head"><div><h1>Let's build your plan</h1><p>A periodized season from now to race day. You can change any of this later.</p></div></div>
+  <section class="photo-banner">
+    <img src="img/bike-checkin.jpg" srcset="img/bike-checkin-1000.jpg 1000w, img/bike-checkin.jpg 1500w" sizes="(max-width: 899px) 100vw, 1000px"
+      alt="Bike check-in at IRONMAN Mont-Tremblant: rows of racked bikes under a blue sky, with white tents and green hills behind">
+    <div class="pb-copy"><h1>Let's build your plan</h1><p>A periodized season from now to race day. You can change any of this later.</p></div>
+    <span class="photo-credit">Bike check-in, Mont-Tremblant 2013</span>
+  </section>
   ${snap ? `<section class="card" style="margin-bottom:16px"><h2>Bring your plan from this device?</h2>
     <p class="muted" style="margin:6px 0 12px">This browser has a plan with ${snap.sessions.length} sessions and ${snap.activities.length} logged workouts from before you signed in.</p>
     <button class="btn primary" data-action="move-local">Move it into my account</button></section>` : ''}

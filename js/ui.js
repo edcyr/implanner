@@ -143,7 +143,9 @@ export function ring(value, size = 84) {
 }
 
 export const initials = name => (name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() || '').join('') || '?';
-export const avatar = (name, cls = '') => `<span class="avatar ${cls}" aria-hidden="true">${esc(initials(name))}</span>`;
+// Each person keeps the same tint everywhere (picked from their name).
+const tint = name => { let h = 0; for (const c of name || '') h = (h * 31 + c.charCodeAt(0)) >>> 0; return `av-${h % 6}`; };
+export const avatar = (name, cls = '') => `<span class="avatar ${tint(name)} ${cls}" aria-hidden="true">${esc(initials(name))}</span>`;
 export const feelChip = feel => feel && FEELS[feel] ? `<span class="tag" title="Felt ${FEELS[feel].label.toLowerCase()}">${FEELS[feel].emoji} ${FEELS[feel].label}</span>` : '';
 
 export function feelPicker(name, value) {
