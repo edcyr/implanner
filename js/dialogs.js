@@ -149,12 +149,13 @@ function sessionOptions(sport, date, selected) {
 // ---- edit or add a planned session ----------------------------------------------------------
 export function openSessionEditor(s = null, { date = today(), sport = 'run' } = {}) {
   const isNew = !s;
-  const x = s || { id: uid(), date, sport, kind: 'custom', title: '', description: '', duration_min: 45, distance_m: null, phase: '', week: 0, sort: 2, skip_reason: null };
+  const x = s || { id: uid(), date, sport, kind: 'custom', title: '', description: '', duration_min: 45, distance_m: null, at_time: null, phase: '', week: 0, sort: 2, skip_reason: null };
   const body = `
     <form data-submit="save" id="sessf" class="stack">
       <div class="form-grid">
         <label class="field"><span>Sport</span><select name="sport">${SPORT_ORDER.map(k => `<option value="${k}" ${k === x.sport ? 'selected' : ''}>${SPORTS[k].label}</option>`).join('')}</select></label>
         <label class="field"><span>Date</span><input type="date" name="date" value="${x.date}" required></label>
+        <label class="field"><span>Start time (optional)</span><input type="time" name="at_time" value="${esc(x.at_time || '')}"><small>For fixed slots like pool times</small></label>
         <label class="field"><span>Planned time (minutes)</span><input type="number" name="duration_min" min="0" max="1440" step="5" value="${x.duration_min}" required></label>
         <label class="field"><span>Distance (m, optional)</span><input type="number" name="distance_m" min="0" step="50" value="${x.distance_m ?? ''}"><small>Used to score swims</small></label>
         <label class="field wide"><span>Title</span><input type="text" name="title" maxlength="120" value="${esc(x.title)}" placeholder="e.g. Easy run" required></label>
@@ -171,6 +172,7 @@ export function openSessionEditor(s = null, { date = today(), sport = 'run' } = 
         await saveSession({
           ...x, sport: v.sport, date: v.date, title: v.title.trim(), description: v.description.trim(),
           duration_min: Math.round(+v.duration_min || 0), distance_m: v.distance_m === '' ? null : Math.round(+v.distance_m),
+          at_time: /^\d{2}:\d{2}$/.test(v.at_time || '') ? v.at_time : null,
           week: wk?.index ?? x.week, phase: wk?.phase ?? x.phase,
         });
         closeModal(); toast(isNew ? 'Session added' : 'Session saved'); rerender();

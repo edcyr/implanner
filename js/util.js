@@ -63,6 +63,17 @@ export function fmtShort(min) {
   const h = Math.floor(min / 60), m = min % 60;
   return m ? `${h}h${pad(m)}` : `${h}h`;
 }
+// "07:30" → "7:30 a.m." (in the reader's locale)
+export function fmtTime(hhmm) {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+// Sessions with a fixed start time first (by time), then the rest in their usual order.
+export const byTime = (a, b) => {
+  const x = a.at_time || '99:99', y = b.at_time || '99:99';
+  return x < y ? -1 : x > y ? 1 : (a.sort || 0) - (b.sort || 0);
+};
 export const fmtHours = min => `${(min / 60).toFixed(min >= 600 ? 0 : 1)} h`;
 export function fmtHMS(s) {
   s = Math.round(s || 0);

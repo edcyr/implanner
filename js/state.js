@@ -1,9 +1,9 @@
 // App state held in memory; every change goes through here so the store stays in sync.
 
 import { store, localStore, cloudConfigured } from './store.js';
-import { buildWeeks, generatePlan, defaultPlanSettings, RACE_PRESET, weekFor } from './plan.js';
+import { buildWeeks, generatePlan, defaultPlanSettings, RACE_PRESET, weekFor, resolveLayout } from './plan.js';
 import { indexActivities } from './compliance.js';
-import { today } from './util.js';
+import { today, byTime } from './util.js';
 
 export const state = {
   profile: null,
@@ -26,7 +26,7 @@ export async function load() {
 }
 
 export function derive() {
-  state.sessions.sort((a, b) => a.date.localeCompare(b.date) || (a.sort || 0) - (b.sort || 0));
+  state.sessions.sort((a, b) => a.date.localeCompare(b.date) || byTime(a, b));
   state.activities.sort((a, b) => (b.start_time || b.date).localeCompare(a.start_time || a.date));
   state.bySession = indexActivities(state.activities);
   state.weeks = hasPlan() ? buildWeeks(state.profile.settings.plan, state.profile.race_date) : [];
@@ -41,10 +41,16 @@ export function draftProfile() {
     race_date: p.race_date || RACE_PRESET.date,
     share_details: !!p.share_details,
     settings: {
-      plan: { ...defaultPlanSettings(), ...(p.settings?.plan || {}) },
+      plan: planWithLayout(p.settings?.plan),
       thresholds: { ...(p.settings?.thresholds || {}) },
     },
   };
+}
+
+// Plans saved before day-by-day layouts keep the same days they were built with.
+function planWithLayout(saved) {
+  if (!saved) return defaultPlanSettings();
+  return { ...defaultPlanSettings(), ...saved, layout: saved.layout || resolveLayout(saved), bricks: saved.bricks ?? true };
 }
 
 // ---- lookups --------------------------------------------------------------

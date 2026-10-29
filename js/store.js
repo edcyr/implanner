@@ -6,7 +6,7 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/+esm';
 
-const SESSION_COLS = ['id', 'date', 'sport', 'kind', 'title', 'description', 'duration_min', 'distance_m', 'phase', 'week', 'sort', 'skip_reason'];
+const SESSION_COLS = ['id', 'date', 'sport', 'kind', 'title', 'description', 'duration_min', 'distance_m', 'at_time', 'phase', 'week', 'sort', 'skip_reason'];
 const ACT_COLS = ['id', 'session_id', 'date', 'start_time', 'sport', 'title', 'duration_s', 'source', 'rpe', 'feel', 'notes', 'file_hash', 'external_id'];
 const DETAIL_COLS = ['distance_m', 'elapsed_s', 'avg_hr', 'max_hr', 'avg_power', 'np', 'avg_cadence', 'ascent_m', 'calories', 'pool_length_m', 'zones'];
 const pick = (o, keys) => Object.fromEntries(keys.filter(k => o[k] !== undefined).map(k => [k, o[k]]));
@@ -132,7 +132,7 @@ const cloud = {
   },
   async putSessions(list) {
     const id = this.user.id;
-    for (const part of chunks(list, 400)) must(await sb.from('sessions').upsert(part.map(s => ({ ...pick(s, SESSION_COLS), user_id: id }))));
+    for (const part of chunks(list, 400)) must(await sb.from('sessions').upsert(part.map(s => ({ at_time: null, distance_m: null, skip_reason: null, ...pick(s, SESSION_COLS), user_id: id }))));
   },
   async removeSessions(ids) {
     for (const part of chunks(ids, 80)) must(await sb.from('sessions').delete().in('id', part));

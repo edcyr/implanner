@@ -22,11 +22,15 @@ export function defaultPlanSettings(ref) {
     current_hours: 6,
     peak_hours: 14,
     recovery_every: 4,     // 3 build weeks + 1 easier week
-    rest_day: 0,           // Monday
     long_ride_day: 5,      // Saturday
     long_run_day: 6,       // Sunday
-    swims: 3,
-    strength: true,
+    bricks: true,          // short run straight after the long ride, from base on
+    layout: {              // days are 0 = Monday … 6 = Sunday; time is optional "HH:MM"
+      swim: { days: [1, 3, 4], time: '' },
+      bike: { days: [1, 3, 5], time: '' },
+      run: { days: [2, 4, 6], time: '' },
+      strength: { days: [2, 4], time: '' },
+    },
   };
 }
 
@@ -193,6 +197,7 @@ export function allocate(total, slots) {
   return out.map((v, i) => r5(Math.max(slots[i].min, v)));
 }
 
+// Older plans stored a rest day, long days and a swim count; derive the same layout from them.
 export function dayRoles(ps) {
   const rest = +ps.rest_day, ride = +ps.long_ride_day, run = +ps.long_run_day;
   const others = [];
@@ -203,58 +208,88 @@ export function dayRoles(ps) {
   return { rest, ride, run, A: others[0], B: others[1], C: others[2], D: others[3] };
 }
 
-function weekSessions(week, ps, th) {
+export const LAYOUT_SPORTS = ['swim', 'bike', 'run', 'strength'];
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// Which days (0 = Monday) each sport happens, with an optional fixed start time ("07:30").
+// The long ride and long run days are always part of the bike and run days.
+export function resolveLayout(ps) {
+  let L = ps.layout;
+  if (!L) {
+    const r = dayRoles(ps);
+    L = {
+      swim: { days: +ps.swims >= 3 ? [r.A, r.C, r.D] : [r.A, r.D] },
+      bike: { days: [r.A, r.C, r.ride] },
+      run: { days: [r.B, r.D, r.run] },
+      strength: { days: ps.strength === false ? [] : [r.B, r.D] },
+    };
+  }
+  const out = {};
+  for (const k of LAYOUT_SPORTS) {
+    const days = [...new Set((L[k]?.days || []).map(Number).filter(d => d >= 0 && d <= 6))].sort((a, b) => a - b);
+    out[k] = { days, time: TIME.test(L[k]?.time || '') ? L[k].time : '' };
+  }
+  const ride = +ps.long_ride_day, run = +ps.long_run_day;
+  if (!out.bike.days.includes(ride)) out.bike.days = [...out.bike.days, ride].sort((a, b) => a - b);
+  if (!out.run.days.includes(run)) out.run.days = [...out.run.days, run].sort((a, b) => a - b);
+  return out;
+}
+
+export function weekSessions(week, ps, th) {
   const { phase, recovery } = week;
-  const roles = dayRoles(ps);
+  const L = resolveLayout(ps);
+  const ride = +ps.long_ride_day, longRun = +ps.long_run_day;
   const out = [];
   const add = (day, sport, kind, duration_min, built, sort, extra = {}) => out.push({
     id: uid(), date: addDays(week.monday, day), sport, kind,
     title: built.title, description: (recovery ? 'Easier week: keep it relaxed. ' : '') + built.text,
-    duration_min, distance_m: null, phase, week: week.index, sort, skip_reason: null, ...extra,
+    duration_min, distance_m: null, at_time: L[sport]?.time || null, phase, week: week.index, sort, skip_reason: null, ...extra,
   });
 
   // Strength is a fixed 30 minutes, counted inside the weekly total.
-  const strengthDays = !ps.strength ? [] :
-    (phase === 'prep' || phase === 'base') ? (recovery ? [roles.B] : [roles.B, roles.D]) :
-    phase === 'build' ? [roles.B] : [];
-  const strengthMin = strengthDays.length * 30;
-  const triMin = Math.max(0, week.hours * 60 - strengthMin);
+  const sd = L.strength.days;
+  const strengthDays = (phase === 'prep' || phase === 'base') ? (recovery ? sd.slice(0, 1) : sd)
+    : phase === 'build' ? sd.slice(0, 1) : [];
+  const triMin = Math.max(0, week.hours * 60 - strengthDays.length * 30);
   const split = SPLIT[phase];
   const K = { ...KINDS[phase] };
   if (recovery) Object.assign(K, { swimA: 'technique', swimC: 'easy', bikeA: 'easy', bikeC: 'endurance', runB: 'strides' });
 
-  // Swims
-  const swimDays = +ps.swims >= 3 ? [['swimA', roles.A], ['swimC', roles.C], ['swimD', roles.D]] : [['swimA', roles.A], ['swimD', roles.D]];
-  const swimMins = allocate(triMin * split.swim, swimDays.map(([k]) => ({ w: k === 'swimD' ? 1.25 : 1, min: 30, max: 90 })));
-  swimDays.forEach(([k, day], i) => {
-    const D = swimDistance(swimMins[i], th);
-    add(day, 'swim', K[k], swimMins[i], swimWorkout(K[k], D, th), 0, { distance_m: D });
-  });
+  // Swims: the last swim of the week is the longer, steadier one; the others alternate.
+  const swimDays = L.swim.days;
+  if (swimDays.length) {
+    const kinds = swimDays.length === 1 ? [K.swimA]
+      : swimDays.map((_, i) => i === swimDays.length - 1 ? K.swimD : i % 2 ? K.swimC : K.swimA);
+    const mins = allocate(triMin * split.swim, kinds.map((k, i) => ({ w: i === kinds.length - 1 && kinds.length > 1 ? 1.25 : 1, min: 30, max: 90 })));
+    swimDays.forEach((day, i) => {
+      const D = swimDistance(mins[i], th);
+      add(day, 'swim', kinds[i], mins[i], swimWorkout(kinds[i], D, th), 0, { distance_m: D });
+    });
+  }
 
-  // Bike: quality day, mid-week endurance, long ride
+  // Bike: long ride on its day; the first other ride is the quality one, the rest steady.
+  const bikeOthers = L.bike.days.filter(d => d !== ride);
   const bikeSlots = [
-    { key: 'A', w: 1, min: 45, max: 120 },
-    { key: 'C', w: 0.9, min: 45, max: 180 },
-    { key: 'long', w: LONG_RIDE_W[phase] * (recovery ? 0.8 : 1), min: 60, max: 360 },
+    ...bikeOthers.map((_, i) => ({ kind: i === 0 ? K.bikeA : i === 1 ? K.bikeC : 'endurance', w: i === 0 ? 1 : 0.9, min: 45, max: i === 0 ? 120 : 180 })),
+    { kind: 'long', w: LONG_RIDE_W[phase] * (recovery ? 0.8 : 1), min: 60, max: 360 },
   ];
   const bikeMins = allocate(triMin * split.bike, bikeSlots);
-  add(roles.A, 'bike', K.bikeA, bikeMins[0], bikeWorkout(K.bikeA, bikeMins[0], phase, th), 1);
-  add(roles.C, 'bike', K.bikeC, bikeMins[1], bikeWorkout(K.bikeC, bikeMins[1], phase, th), 1);
-  add(roles.ride, 'bike', 'long', bikeMins[2], bikeWorkout('long', bikeMins[2], phase, th), 1);
+  [...bikeOthers, ride].forEach((day, i) => add(day, 'bike', bikeSlots[i].kind, bikeMins[i], bikeWorkout(bikeSlots[i].kind, bikeMins[i], phase, th), 1));
 
-  // Run: quality, easy, long, brick
-  const brickW = recovery ? 0 : BRICK_W[phase];
+  // Run: long run on its day; the first other run is the quality one, the rest easy; brick after the long ride.
+  const runOthers = L.run.days.filter(d => d !== longRun);
+  const brickW = recovery || ps.bricks === false ? 0 : BRICK_W[phase];
   const runSlots = [
-    { w: 1, min: 30, max: 75 },
-    { w: 0.7, min: 25, max: 60 },
-    { w: 1.5, min: 40, max: phase === 'prep' ? 90 : 165 },
-    ...(brickW ? [{ w: brickW, min: 10, max: 45 }] : []),
+    ...runOthers.map((_, i) => ({ kind: i === 0 ? K.runB : K.runD, w: i === 0 ? 1 : 0.7, min: i === 0 ? 30 : 25, max: i === 0 ? 75 : 60 })),
+    { kind: 'long', w: 1.5, min: 40, max: phase === 'prep' ? 90 : 165 },
+    ...(brickW ? [{ kind: 'brick', w: brickW, min: 10, max: 45 }] : []),
   ];
   const runMins = allocate(triMin * split.run, runSlots);
-  add(roles.B, 'run', K.runB, runMins[0], runWorkout(K.runB, runMins[0], phase, th), 2);
-  add(roles.D, 'run', K.runD, runMins[1], runWorkout(K.runD, runMins[1], phase, th), 2);
-  add(roles.run, 'run', 'long', runMins[2], runWorkout('long', runMins[2], phase, th), 2);
-  if (brickW) add(roles.ride, 'run', 'brick', runMins[3], runWorkout('brick', runMins[3], phase, th), 3);
+  [...runOthers, longRun, ...(brickW ? [ride] : [])].forEach((day, i) => {
+    const sl = runSlots[i];
+    add(day, 'run', sl.kind, runMins[i], runWorkout(sl.kind, runMins[i], phase, th), sl.kind === 'brick' ? 3 : 2,
+      sl.kind === 'brick' ? { at_time: L.bike.time || null } : {});
+  });
 
   strengthDays.forEach(day => add(day, 'strength', 'strength', 30, strengthWorkout(phase), 4));
   return out;
@@ -263,7 +298,7 @@ function weekSessions(week, ps, th) {
 function raceWeekSessions(week, raceDate, raceName, th) {
   const s = (offset, sport, kind, duration_min, title, description, sort = 0, distance_m = null) => ({
     id: uid(), date: addDays(raceDate, offset), sport, kind, title, description, duration_min, distance_m,
-    phase: 'race', week: week.index, sort, skip_reason: null,
+    at_time: null, phase: 'race', week: week.index, sort, skip_reason: null,
   });
   const list = [
     s(-5, 'swim', 'easy', 30, 'Easy swim', `1,000 m easy with 4×100 at race pace${cssNote(th)}.`, 0, 1000),

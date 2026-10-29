@@ -42,6 +42,9 @@ create table if not exists public.sessions (            -- planned workouts
   created_at   timestamptz not null default now()
 );
 create index if not exists sessions_user_date on public.sessions (user_id, date);
+-- Optional fixed start time ("07:30"), e.g. pool slots.
+alter table public.sessions add column if not exists at_time text
+  check (at_time is null or at_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$');
 
 create table if not exists public.activities (          -- completed workouts (shared with crew)
   id          uuid primary key,

@@ -1,8 +1,8 @@
-import { esc, today, addDays, mondayOf, fmtMMSS, parseMMSS, fmtDay, debounce } from '../util.js';
+import { esc, today, addDays, mondayOf, fmtMMSS, parseMMSS, fmtDay } from '../util.js';
 import { state, saveProfile, regenerateFrom, isCloud, exportData, importData, load } from '../state.js';
 import { store, localStore } from '../store.js';
 import { toast, confirmDialog, openModal, closeModal } from '../ui.js';
-import { planFields, readPlanFields, validatePlan, planPreview, drawPreview } from './setup.js';
+import { planFields, readPlanFields, validatePlan, planPreview, drawPreview, wirePlanFields } from './setup.js';
 import { rerender, go } from '../nav.js';
 import { garminCardHtml, mountGarminCard } from './garmin-card.js';
 
@@ -88,9 +88,13 @@ export function mount(root, params) {
   if (isCloud()) mountGarminCard(root);
   const planForm = root.querySelector('[data-form="plan"]');
   const prev = planForm.querySelector('[data-preview]'), chartEl = planForm.querySelector('[data-chart="preview"]');
-  const update = () => { const { html, weeks } = planPreview(readPlanFields(planForm), state.profile.race_date); prev.innerHTML = html; drawPreview(chartEl, weeks); };
+  const update = () => {
+    const { html, weeks, typical } = planPreview(readPlanFields(planForm), state.profile.race_date);
+    prev.innerHTML = html; drawPreview(chartEl, weeks);
+    planForm.querySelector('[data-typical]').innerHTML = typical;
+  };
   update();
-  planForm.addEventListener('input', debounce(update, 150));
+  wirePlanFields(planForm, update);
   const ro = new ResizeObserver(() => update()); ro.observe(chartEl);
 
   root.addEventListener('submit', async e => {

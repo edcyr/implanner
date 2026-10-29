@@ -1,6 +1,6 @@
 // Shared UI: modal, toast, confirm, tooltips and small components.
 
-import { esc, icon, sportIcon, fmtMin, fmtShort, fmtDist, SPORTS, FEELS, DAY_SHORT, addDays, today, toDate } from './util.js';
+import { esc, icon, sportIcon, fmtMin, fmtShort, fmtDist, fmtTime, SPORTS, FEELS, DAY_SHORT, addDays, today, toDate } from './util.js';
 import { STATUS, sessionStatus } from './compliance.js';
 
 // ---- toast ------------------------------------------------------------------
@@ -97,6 +97,7 @@ export function statusBadge(status, text) {
 
 export function sessionMeta(s) {
   const parts = [fmtMin(s.duration_min)];
+  if (s.at_time) parts.unshift(fmtTime(s.at_time));
   if (s.distance_m) parts.push(fmtDist(s.distance_m, s.sport));
   return parts.join(' · ');
 }
@@ -110,7 +111,7 @@ export function chip(s, bySession, opts = {}) {
   const st = sessionStatus(s, bySession);
   const label = `${SPORTS[s.sport]?.label}: ${s.title}, ${sessionMeta(s)}. ${STATUS[st.status].label}`;
   return `<button class="chip st-${st.status}" data-action="${opts.action || 'open-session'}" data-id="${s.id}" ${opts.draggable ? 'draggable="true"' : ''} title="${esc(label)}" aria-label="${esc(label)}">
-    ${sportIcon(s.sport)}<span class="chip-txt">${esc(fmtShort(s.duration_min))}</span><span class="chip-mk" aria-hidden="true">${STATUS[st.status].mark}</span></button>`;
+    ${sportIcon(s.sport)}<span class="chip-txt">${s.at_time ? `<span class="chip-time">${esc(s.at_time.replace(/^0/, ''))}</span>` : ''}${esc(fmtShort(s.duration_min))}</span><span class="chip-mk" aria-hidden="true">${STATUS[st.status].mark}</span></button>`;
 }
 
 // Seven-day strip of small sport tiles, colored by status.

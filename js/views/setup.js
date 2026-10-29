@@ -1,6 +1,6 @@
-import { esc, DAY_NAMES, fmtDay, mondayOf, daysBetween, debounce } from '../util.js';
+import { esc, DAY_NAMES, DAY_SHORT, SPORTS, sportIcon, fmtDay, fmtShort, mondayOf, daysBetween, debounce, dow, byTime } from '../util.js';
 import { draftProfile, createPlan, isCloud, localSnapshot, moveLocalToCloud, load } from '../state.js';
-import { buildWeeks, PHASES, RACE_PRESET } from '../plan.js';
+import { buildWeeks, PHASES, RACE_PRESET, resolveLayout, weekSessions, LAYOUT_SPORTS } from '../plan.js';
 import { stackedColumns } from '../charts.js';
 import { toast } from '../ui.js';
 import { go } from '../nav.js';
@@ -9,6 +9,25 @@ export const title = 'Set up your plan';
 const PHASE_FILL = { prep: 'var(--phase-prep)', base: 'var(--phase-base)', build: 'var(--phase-build)', peak: 'var(--phase-peak)', taper: 'var(--phase-taper)', race: 'var(--phase-race)' };
 
 const dayOptions = sel => DAY_NAMES.map((d, i) => `<option value="${i}" ${+sel === i ? 'selected' : ''}>${d}</option>`).join('');
+
+// The day-by-day grid: tick the days for each sport, optionally a fixed start time.
+function layoutGrid(ps) {
+  const L = resolveLayout(ps);
+  const longDay = { bike: +ps.long_ride_day, run: +ps.long_run_day };
+  return `
+    <div class="lg-row lg-head" aria-hidden="true"><span></span>${DAY_SHORT.map(d => `<span>${d[0]}<span class="lg-full">${d.slice(1)}</span></span>`).join('')}<span class="lg-head-time">Start time</span></div>
+    ${LAYOUT_SPORTS.map(sp => `<div class="lg-row" role="group" aria-label="${SPORTS[sp].label} days">
+      <span class="lg-sport">${sportIcon(sp)}<span>${SPORTS[sp].label}</span></span>
+      ${[0, 1, 2, 3, 4, 5, 6].map(d => {
+        const isLong = longDay[sp] === d;
+        const on = isLong || L[sp].days.includes(d);
+        return `<label class="lg-cell s-${sp}" title="${esc(`${SPORTS[sp].label} on ${DAY_NAMES[d]}${isLong ? ` (long ${sp === 'bike' ? 'ride' : 'run'})` : ''}`)}">
+          <input type="checkbox" name="${sp}_d${d}" ${on ? 'checked' : ''} ${isLong ? 'disabled' : ''} aria-label="${esc(`${SPORTS[sp].label} on ${DAY_NAMES[d]}`)}">
+          <span class="lg-mark" aria-hidden="true">${isLong ? 'L' : '✓'}</span></label>`;
+      }).join('')}
+      <input type="time" class="lg-time" name="${sp}_time" value="${esc(L[sp].time)}" aria-label="${esc(`${SPORTS[sp].label} start time (optional)`)}">
+    </div>`).join('')}`;
+}
 
 // Plan fields shared with Settings.
 export function planFields(ps) {
@@ -20,41 +39,78 @@ export function planFields(ps) {
       <label class="field"><span>Easier week every</span><select name="recovery_every">
         <option value="4" ${+ps.recovery_every === 4 ? 'selected' : ''}>4th week (3:1)</option>
         <option value="3" ${+ps.recovery_every === 3 ? 'selected' : ''}>3rd week (2:1)</option></select></label>
-      <label class="field"><span>Rest day</span><select name="rest_day">${dayOptions(ps.rest_day)}</select></label>
-      <label class="field"><span>Long ride day</span><select name="long_ride_day">${dayOptions(ps.long_ride_day)}</select></label>
-      <label class="field"><span>Long run day</span><select name="long_run_day">${dayOptions(ps.long_run_day)}</select></label>
-      <label class="field"><span>Swims a week</span><select name="swims"><option value="3" ${+ps.swims === 3 ? 'selected' : ''}>3</option><option value="2" ${+ps.swims === 2 ? 'selected' : ''}>2</option></select></label>
-      <label class="check wide"><input type="checkbox" name="strength" ${ps.strength ? 'checked' : ''}><span><b>Include strength work</b><br><span class="muted small">Two 30-minute sessions a week in prep and base, one in build</span></span></label>
+    </div>
+    <div class="stack" style="margin-top:6px">
+      <div><b>Your week</b><p class="muted small">Tick the days you can do each sport, and add a start time for fixed slots like pool times. Days with nothing ticked are rest days.</p></div>
+      <div class="layout-grid" data-layout>${layoutGrid(ps)}</div>
+      <div class="form-grid">
+        <label class="field"><span>Long ride day</span><select name="long_ride_day">${dayOptions(ps.long_ride_day)}</select></label>
+        <label class="field"><span>Long run day</span><select name="long_run_day">${dayOptions(ps.long_run_day)}</select></label>
+        <label class="check wide"><input type="checkbox" name="bricks" ${ps.bricks !== false ? 'checked' : ''}><span><b>Brick run after the long ride</b><br><span class="muted small">A short run straight off the bike, from the base phase on</span></span></label>
+      </div>
+      <div data-typical></div>
     </div>`;
 }
 
 export function readPlanFields(form) {
   const v = Object.fromEntries(new FormData(form).entries());
+  const layout = {};
+  for (const sp of LAYOUT_SPORTS) {
+    layout[sp] = { days: [0, 1, 2, 3, 4, 5, 6].filter(d => v[`${sp}_d${d}`]), time: v[`${sp}_time`] || '' };
+  }
   return {
     start_date: mondayOf(v.start_date),
     current_hours: +v.current_hours, peak_hours: +v.peak_hours, recovery_every: +v.recovery_every,
-    rest_day: +v.rest_day, long_ride_day: +v.long_ride_day, long_run_day: +v.long_run_day,
-    swims: +v.swims, strength: !!v.strength,
+    long_ride_day: +v.long_ride_day, long_run_day: +v.long_run_day, bricks: !!v.bricks, layout,
   };
 }
 
 export function validatePlan(ps, raceDate) {
-  if (new Set([ps.rest_day, ps.long_ride_day, ps.long_run_day]).size < 3) return 'Pick different days for rest, the long ride and the long run.';
+  const L = resolveLayout(ps);
+  if (!L.swim.days.length) return 'Pick at least one swim day.';
+  if (ps.long_ride_day === ps.long_run_day) return 'Pick different days for the long ride and the long run.';
   if (!(ps.current_hours > 0) || !(ps.peak_hours > 0)) return 'Enter your weekly hours.';
   if (ps.peak_hours < ps.current_hours) return 'Peak hours should be at least your current hours.';
   if (daysBetween(ps.start_date, raceDate) < 28) return 'The race needs to be at least 4 weeks after the plan starts.';
   return null;
 }
 
+// A representative week (first full base week) so you can see where everything lands.
+function typicalWeek(ps, weeks) {
+  const wk = weeks.find(w => w.phase === 'base' && !w.recovery) || weeks.find(w => !w.recovery) || weeks[0];
+  if (!wk) return '';
+  const list = weekSessions(wk, ps, {}).sort(byTime);
+  const rest = [0, 1, 2, 3, 4, 5, 6].filter(d => !list.some(x => dow(x.date) === d));
+  return `<div class="card" style="background:var(--wash);border:0;padding:14px">
+    <p class="small"><b>A typical ${PHASES[wk.phase].label.toLowerCase()} week</b> <span class="muted">(week ${wk.index + 1}, about ${wk.hours.toFixed(1)} h)</span></p>
+    <div class="week-grid flex-days typical" style="margin-top:8px">${DAY_SHORT.map((d, i) => `<div class="day">
+      <div class="day-head"><b>${d}</b></div>
+      ${list.filter(x => dow(x.date) === i).map(x => `<span class="chip st-upcoming" title="${esc(x.title)}">${sportIcon(x.sport)}<span class="chip-txt">${x.at_time ? `<span class="chip-time">${esc(x.at_time.replace(/^0/, ''))}</span>` : ''}${esc(fmtShort(x.duration_min))}</span></span>`).join('') || `<span class="rest">Rest</span>`}
+    </div>`).join('')}</div>
+    ${rest.length ? '' : `<p class="note" style="margin-top:10px">No rest day this way. Most plans keep at least one day a week free.</p>`}
+  </div>`;
+}
+
 export function planPreview(ps, raceDate) {
   const err = validatePlan(ps, raceDate);
-  if (err) return { html: `<p class="note">${esc(err)}</p>`, weeks: [] };
+  if (err) return { html: `<p class="note">${esc(err)}</p>`, weeks: [], typical: '' };
   const weeks = buildWeeks(ps, raceDate);
   const counts = {};
   weeks.forEach(w => { counts[w.phase] = (counts[w.phase] || 0) + 1; });
   const html = `<p><b>${weeks.length} weeks</b>, ${fmtDay(weeks[0].monday, { month: 'short', day: 'numeric' })} to race day.</p>
     <div class="legend" style="margin:8px 0 10px">${Object.keys(PHASES).filter(k => counts[k]).map(k => `<span><i style="background:${PHASE_FILL[k]}"></i>${PHASES[k].label} ${counts[k]} wk</span>`).join('')}</div>`;
-  return { html, weeks };
+  return { html, weeks, typical: typicalWeek(ps, weeks) };
+}
+
+// Keep the grid in step with the long-day pickers, and refresh previews on any change.
+export function wirePlanFields(form, onChange) {
+  form.addEventListener('change', e => {
+    if (e.target.name === 'long_ride_day' || e.target.name === 'long_run_day') {
+      form.querySelector('[data-layout]').innerHTML = layoutGrid(readPlanFields(form));
+    }
+  });
+  form.addEventListener('input', debounce(onChange, 150));
+  form.addEventListener('change', debounce(onChange, 150));
 }
 
 export function drawPreview(el, weeks) {
@@ -99,11 +155,12 @@ export function mount(root) {
   const form = root.querySelector('[data-setup]');
   const prev = root.querySelector('[data-preview]'), chartEl = root.querySelector('[data-chart="preview"]');
   const update = () => {
-    const { html, weeks } = planPreview(readPlanFields(form), form.race_date.value);
+    const { html, weeks, typical } = planPreview(readPlanFields(form), form.race_date.value);
     prev.innerHTML = html; drawPreview(chartEl, weeks);
+    form.querySelector('[data-typical]').innerHTML = typical;
   };
   update();
-  form.addEventListener('input', debounce(update, 150));
+  wirePlanFields(form, update);
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const ps = readPlanFields(form);
