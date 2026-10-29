@@ -57,13 +57,15 @@ const looksLikeHtml = (t: string) => /<html|<!doctype|cloudflare|attention requi
 
 async function garminToken(apiKey: string): Promise<string> {
   const r = await fetch(`${GARMIN}/personalapitoken-service/personal-api/personal-api-key/token`, {
-    method: 'POST', headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/json' },
+    // Accept anything: the token service answers 406 Not Acceptable to `Accept: application/json`.
+    method: 'POST', headers: { Authorization: `ApiKey ${apiKey}`, Accept: '*/*' },
   });
   const text = await r.text();
   const type = r.headers.get('content-type') ?? '';
   if (!r.ok) {
     const html = looksLikeHtml(text);
-    console.error('garmin token failed', r.status, type || '(no content-type)', html ? '(HTML page)' : `(${text.length} bytes)`);
+    // Garmin's JSON error bodies are short status messages (no secrets), so log them to help diagnose.
+    console.error('garmin token failed', r.status, type || '(no content-type)', html ? '(HTML page)' : type.includes('json') ? text.slice(0, 300) : `(${text.length} bytes)`);
     if (r.status === 401) throw new Error('Garmin didn’t recognise the key (401). Check you copied all of it, or create a new one in Garmin Connect.');
     if (r.status === 403 || html) throw new Error(`Garmin refused the request (${r.status}${html ? ', firewall page' : ''}). It may be blocking requests from Supabase's servers.`);
     throw new Error(`Garmin token request failed (${r.status})`);
@@ -114,13 +116,13 @@ Deno.serve(async (req) => {
       const max = Math.min(8, Math.max(1, Number(body.max) || 6));
       const q = new URLSearchParams({ start: '0', limit: '100', startDate: body.since, endDate: body.until, sortOrder: 'asc', excludeChildren: 'true' });
       const lr = await fetch(`${GARMIN}/activitylist-service/activities/search/activities?${q}`, { headers: { ...auth, Accept: 'application/json' } });
-      if (!lr.ok) { console.error('garmin list failed', lr.status, lr.headers.get('content-type')); throw new Error(`Garmin activity list failed (${lr.status})`); }
+      if (!lr.ok) { console.error('garmin list failed', lr.status, lr.headers.get('content-type'), (await lr.text()).slice(0, 300)); throw new Error(`Garmin activity list failed (${lr.status})`); }
       const list: any[] = await lr.json();
       const wanted = list.filter(a => sportOf(a.activityType?.typeKey) && !known.has(String(a.activityId)));
       const out = [];
       for (const a of wanted.slice(0, max)) {
         const fr = await fetch(`${GARMIN}/download-service/files/activity/${a.activityId}`, {
-          headers: { ...auth, Accept: 'application/x-zip-compressed, application/zip, application/octet-stream' },
+          headers: { ...auth, Accept: '*/*' },
         });
         if (!fr.ok) { console.error('garmin file failed', fr.status, a.activityId); throw new Error(`Garmin file download failed (${fr.status}) for activity ${a.activityId}`); }
         out.push({
