@@ -4,6 +4,9 @@ import { buildWeeks, PHASES, RACE_PRESET, resolveLayout, weekSessions, LAYOUT_SP
 import { stackedColumns } from '../charts.js';
 import { toast } from '../ui.js';
 import { go } from '../nav.js';
+import { racesCardHtml, mountRacesCard } from './races-card.js';
+
+let setupRaces = null;     // key races added before the plan exists
 
 export const title = 'Set up your plan';
 const PHASE_FILL = { prep: 'var(--phase-prep)', base: 'var(--phase-base)', build: 'var(--phase-build)', peak: 'var(--phase-peak)', taper: 'var(--phase-taper)', race: 'var(--phase-race)' };
@@ -135,7 +138,7 @@ export async function render() {
   ${snap ? `<section class="card" style="margin-bottom:16px"><h2>Bring your plan from this device?</h2>
     <p class="muted" style="margin:6px 0 12px">This browser has a plan with ${snap.sessions.length} sessions and ${snap.activities.length} logged workouts from before you signed in.</p>
     <button class="btn primary" data-action="move-local">Move it into my account</button></section>` : ''}
-  <form class="stack" data-setup>
+  <form class="stack" data-setup id="setupform">
     <section class="card stack">
       <h2>You and your race</h2>
       <div class="form-grid">
@@ -146,9 +149,10 @@ export async function render() {
     </section>
     <section class="card stack"><h2>Your training week</h2>${planFields(p.settings.plan)}</section>
     <section class="card"><h2 style="margin-bottom:8px">Your season</h2><div data-preview></div><div class="chart" data-chart="preview" data-label="Planned hours each week"></div></section>
-    <p class="muted small">IMPlanner builds a general plan from common Ironman training principles. It isn't medical advice: check with a doctor before starting, and adjust to how you feel.</p>
-    <div class="row" style="justify-content:flex-end"><button class="btn primary" type="submit">Create my plan</button></div>
-  </form>`;
+  </form>
+  ${racesCardHtml()}
+  <p class="muted small" style="margin-top:16px">IMPlanner builds a general plan from common Ironman training principles. It isn't medical advice: check with a doctor before starting, and adjust to how you feel.</p>
+  <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn primary" type="submit" form="setupform">Create my plan</button></div>`;
 }
 
 export function mount(root) {
@@ -161,15 +165,22 @@ export function mount(root) {
   };
   update();
   wirePlanFields(form, update);
+  setupRaces ??= [...(draftProfile().settings.plan.races || [])];
+  mountRacesCard(root, {
+    get: () => setupRaces,
+    save: async races => { setupRaces = races; },
+    bounds: () => ({ start: readPlanFields(form).start_date, end: form.race_date.value }),
+  });
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const ps = readPlanFields(form);
     const err = validatePlan(ps, form.race_date.value);
     if (err) { toast(err); return; }
     const base = draftProfile();
-    const btn = form.querySelector('[type=submit]'); btn.disabled = true; btn.textContent = 'Building…';
+    const btn = root.querySelector('[form=setupform]'); btn.disabled = true; btn.textContent = 'Building…';
     try {
-      const n = await createPlan({ ...base, name: form.name.value.trim(), race_name: form.race_name.value.trim(), race_date: form.race_date.value, settings: { ...base.settings, plan: ps } });
+      const n = await createPlan({ ...base, name: form.name.value.trim(), race_name: form.race_name.value.trim(), race_date: form.race_date.value, settings: { ...base.settings, plan: { ...ps, races: setupRaces } } });
+      setupRaces = null;
       toast(`Plan ready: ${n} sessions`);
       const pendingJoin = sessionStorage.getItem('implanner:join');
       go(pendingJoin ? `#/join/${pendingJoin}` : '#/today');

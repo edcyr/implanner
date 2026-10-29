@@ -248,6 +248,10 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .chip .chip-time { display: block; font-size: 10.5px; font-weight: 650; color: var(--ink-2); line-height: 1.1; }
 .chip.st-missed .chip-txt { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--critical); }
 .chip.dragging { opacity: .4; }
+.chip.is-race { border-color: var(--phase-race); box-shadow: inset 0 0 0 1px var(--phase-race); }
+.chip.is-race .chip-txt::before { content: '🏁 '; }
+.race-flag { font-size: 20px; line-height: 1; width: 30px; text-align: center; }
+.tag.race-tag { background: color-mix(in srgb, var(--phase-race) 16%, var(--surface)); color: var(--ink); }
 
 /* ---------- week grid ---------- */
 .week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }

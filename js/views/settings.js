@@ -1,5 +1,7 @@
 import { esc, today, addDays, mondayOf, fmtMMSS, parseMMSS, fmtDay } from '../util.js';
-import { state, saveProfile, regenerateFrom, isCloud, exportData, importData, load } from '../state.js';
+import { state, saveProfile, regenerateFrom, regenerateRange, keyRaces, isCloud, exportData, importData, load } from '../state.js';
+import { raceWindow } from '../plan.js';
+import { racesCardHtml, mountRacesCard } from './races-card.js';
 import { store, localStore } from '../store.js';
 import { toast, confirmDialog, openModal, closeModal } from '../ui.js';
 import { planFields, readPlanFields, validatePlan, planPreview, drawPreview, wirePlanFields } from './setup.js';
@@ -44,6 +46,8 @@ export function render() {
     <div class="row" style="justify-content:flex-end"><button class="btn primary">Save zones</button></div>
   </form>
 
+  ${racesCardHtml()}
+
   <form class="card stack" data-form="plan" id="plan" style="margin-top:16px">
     <h2>Rebuild your plan</h2>
     <p class="muted small">Change your hours or week layout, then rebuild from a date. Sessions you've already logged stay as they are; everything planned after that date is replaced, including your own edits.</p>
@@ -84,8 +88,25 @@ export function render() {
 }
 
 export function mount(root, params) {
-  if (params[0] === 'plan' || params[0] === 'garmin') requestAnimationFrame(() => root.querySelector(`#${params[0]}`)?.scrollIntoView({ block: 'start' }));
+  if (['plan', 'garmin', 'races'].includes(params[0])) requestAnimationFrame(() => root.querySelector(`#${params[0]}`)?.scrollIntoView({ block: 'start' }));
   if (isCloud()) mountGarminCard(root);
+  mountRacesCard(root, {
+    get: keyRaces,
+    bounds: () => ({ start: state.profile.settings.plan.start_date, end: state.profile.race_date }),
+    save: async (races, r, action) => {
+      const p = state.profile;
+      await saveProfile({ settings: { ...p.settings, plan: { ...p.settings.plan, races } } });
+      const [from, to] = raceWindow(r);
+      const ok = await confirmDialog({
+        title: action === 'add' ? `Fit ${r.name} into your plan?` : `Take ${r.name} out of your plan?`,
+        message: `Planned sessions from ${fmtDay(from < today() ? today() : from, { month: 'long', day: 'numeric' })} to ${fmtDay(to, { month: 'long', day: 'numeric' })} are rebuilt${action === 'add' ? ' with a taper before the race and recovery after' : ' as normal training'}. Workouts you've logged stay; changes you made by hand in those weeks are replaced.`,
+        confirm: action === 'add' ? 'Update my plan' : 'Rebuild those weeks',
+      });
+      if (!ok) { toast('Saved. Rebuild your plan to apply it.'); return; }
+      const res = await regenerateRange(from, to);
+      toast(action === 'add' ? `${r.name} is in your plan (${res.added} sessions updated)` : `${r.name} removed from your plan`);
+    },
+  });
   const planForm = root.querySelector('[data-form="plan"]');
   const prev = planForm.querySelector('[data-preview]'), chartEl = planForm.querySelector('[data-chart="preview"]');
   const update = () => {
@@ -116,7 +137,7 @@ export function mount(root, params) {
         const from = f.from.value || today();
         const ok = await confirmDialog({ title: 'Rebuild your plan?', message: `Planned sessions from ${fmtDay(from, { weekday: 'long', month: 'long', day: 'numeric' })} on will be replaced. Logged workouts are kept.`, confirm: 'Rebuild' });
         if (!ok) return;
-        await saveProfile({ settings: { ...p.settings, plan: ps } });
+        await saveProfile({ settings: { ...p.settings, plan: { ...ps, races: p.settings.plan.races || [] } } });
         const r = await regenerateFrom(from);
         toast(`Plan rebuilt: ${r.added} sessions`); go('#/plan');
       } else if (kind === 'sharing') {

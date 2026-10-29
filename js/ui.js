@@ -110,7 +110,7 @@ export function doneText(st) {
 export function chip(s, bySession, opts = {}) {
   const st = sessionStatus(s, bySession);
   const label = `${SPORTS[s.sport]?.label}: ${s.title}, ${sessionMeta(s)}. ${STATUS[st.status].label}`;
-  return `<button class="chip st-${st.status}" data-action="${opts.action || 'open-session'}" data-id="${s.id}" ${opts.draggable ? 'draggable="true"' : ''} title="${esc(label)}" aria-label="${esc(label)}">
+  return `<button class="chip st-${st.status}${s.kind === 'race' ? ' is-race' : ''}" data-action="${opts.action || 'open-session'}" data-id="${s.id}" ${opts.draggable ? 'draggable="true"' : ''} title="${esc(label)}" aria-label="${esc(label)}">
     ${sportIcon(s.sport)}<span class="chip-txt">${s.at_time ? `<span class="chip-time">${esc(s.at_time.replace(/^0/, ''))}</span>` : ''}${esc(fmtShort(s.duration_min))}</span><span class="chip-mk" aria-hidden="true">${STATUS[st.status].mark}</span></button>`;
 }
 

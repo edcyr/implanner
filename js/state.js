@@ -93,6 +93,27 @@ export async function regenerateFrom(fromDate) {
   return { removed: drop.length, added: fresh.length };
 }
 
+// Rebuild only the planned sessions between two dates (e.g. around a key race), never the past.
+// Logged sessions stay; anything else in the window is replaced by the plan as it stands now.
+export async function regenerateRange(from, to) {
+  const t = today();
+  if (from < t) from = t;
+  if (to < from) return { removed: 0, added: 0 };
+  const inRange = s => s.date >= from && s.date <= to;
+  const drop = state.sessions.filter(s => inRange(s) && !state.bySession.has(s.id));
+  const dropIds = new Set(drop.map(s => s.id));
+  const kept = state.sessions.filter(s => !dropIds.has(s.id));
+  const doneKeys = new Set(kept.filter(inRange).map(s => `${s.date}|${s.sport}`));
+  const fresh = generatePlan(state.profile, from).filter(n => n.date <= to && !doneKeys.has(`${n.date}|${n.sport}`));
+  if (drop.length) await store.removeSessions([...dropIds]);
+  if (fresh.length) await store.putSessions(fresh);
+  state.sessions = kept.concat(fresh);
+  derive();
+  return { removed: drop.length, added: fresh.length };
+}
+
+export const keyRaces = () => [...(state.profile?.settings?.plan?.races || [])].sort((a, b) => a.date.localeCompare(b.date));
+
 export async function saveSession(s) {
   await store.putSessions([s]);
   const i = state.sessions.findIndex(x => x.id === s.id);

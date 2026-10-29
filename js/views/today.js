@@ -1,5 +1,5 @@
 import { esc, today, addDays, mondayOf, fmtHours, fmtRange, fmtDay, relDay, sportIcon, icon, timeAgo } from '../util.js';
-import { state, isCloud, sessionsOn, sessionsBetween, currentWeek, sessionById } from '../state.js';
+import { state, isCloud, sessionsOn, sessionsBetween, currentWeek, sessionById, keyRaces } from '../state.js';
 import { summarize, sessionStatus } from '../compliance.js';
 import { PHASES } from '../plan.js';
 import { ring, strip, statusBadge, sessionMeta, doneText, feelChip, phaseLabel, daysTo, toast, avatar } from '../ui.js';
@@ -59,6 +59,7 @@ export function render() {
       <div class="kicker">${esc(kicker)}</div>
       <h1>${greeting()}${firstName ? `, ${esc(firstName)}` : ''}</h1>
       <p class="countdown">${left > 0 ? `<b>${left} days</b> to ${esc(p.race_name)}` : left === 0 ? `<b>Race day!</b> Go get it.` : `${esc(p.race_name)} is done. Well raced.`}</p>
+      ${(() => { const r = keyRaces().find(x => x.date >= t); if (!r) return ''; const d = daysTo(r.date); return `<p class="countdown">🏁 ${d === 0 ? `<b>${esc(r.name)} today.</b> Enjoy it!` : `<b>${d} day${d === 1 ? '' : 's'}</b> to ${esc(r.name)}`}</p>`; })()}
       <p class="daily-line">${esc(dailyLine(t, wk?.phase))}</p>
       ${wk ? `<p class="blurb">${esc(PHASES[wk.phase].label)}: ${esc(PHASES[wk.phase].blurb)}</p>` : ''}
     </div>

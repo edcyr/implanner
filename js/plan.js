@@ -251,7 +251,12 @@ export function weekSessions(week, ps, th) {
   const strengthDays = (phase === 'prep' || phase === 'base') ? (recovery ? sd.slice(0, 1) : sd)
     : phase === 'build' ? sd.slice(0, 1) : [];
   const triMin = Math.max(0, week.hours * 60 - strengthDays.length * 30);
-  const split = SPLIT[phase];
+  const fr = raceFocus(week, ps), focus = fr?.sport || null;
+  const split = { ...SPLIT[phase] };
+  if (focus === 'run') { split.run += 0.05; split.bike -= 0.05; }
+  if (focus === 'bike') { split.bike += 0.05; split.run -= 0.05; }
+  // Long runs build toward the race distance: about 1h40 → 2h20 for a marathon, less for a half.
+  const longRunMin = focus === 'run' && !recovery ? clamp(Math.round((fr.km >= 42 ? 160 : 115) - fr.d * (fr.km >= 42 ? 1.3 : 0.8)), 40, fr.km >= 42 ? 150 : 100) : 40;
   const K = { ...KINDS[phase] };
   if (recovery) Object.assign(K, { swimA: 'technique', swimC: 'easy', bikeA: 'easy', bikeC: 'endurance', runB: 'strides' });
 
@@ -281,7 +286,7 @@ export function weekSessions(week, ps, th) {
   const brickW = recovery || ps.bricks === false ? 0 : BRICK_W[phase];
   const runSlots = [
     ...runOthers.map((_, i) => ({ kind: i === 0 ? K.runB : K.runD, w: i === 0 ? 1 : 0.7, min: i === 0 ? 30 : 25, max: i === 0 ? 75 : 60 })),
-    { kind: 'long', w: 1.5, min: 40, max: phase === 'prep' ? 90 : 165 },
+    { kind: 'long', w: focus === 'run' ? 1.8 : 1.5, min: longRunMin, max: focus === 'run' ? 180 : phase === 'prep' ? 90 : 165 },
     ...(brickW ? [{ kind: 'brick', w: brickW, min: 10, max: 45 }] : []),
   ];
   const runMins = allocate(triMin * split.run, runSlots);
@@ -317,13 +322,119 @@ function raceWeekSessions(week, raceDate, raceName, th) {
 export function generatePlan(profile, fromDate = null) {
   const ps = profile.settings.plan, th = profile.settings.thresholds || {};
   const weeks = buildWeeks(ps, profile.race_date);
-  const sessions = [];
+  let sessions = [];
   for (const w of weeks) {
-    if (fromDate && addDays(w.monday, 6) < fromDate) continue;
-    const list = w.phase === 'race' ? raceWeekSessions(w, profile.race_date, profile.race_name || 'Race', th) : weekSessions(w, ps, th);
-    sessions.push(...list.filter(s => !fromDate || s.date >= fromDate));
+    sessions.push(...(w.phase === 'race' ? raceWeekSessions(w, profile.race_date, profile.race_name || 'Race', th) : weekSessions(w, ps, th)));
   }
-  return sessions;
+  sessions = applyKeyRaces(sessions, ps, th, profile.race_date);
+  return fromDate ? sessions.filter(s => s.date >= fromDate) : sessions;
+}
+
+// ---- key races (B and C races before the main one) ------------------------------------
+// km: distance; legs: triathlon swim/bike/run km; rest: days after with none of that sport;
+// recover: further days kept easy; taperB: days eased before a B race.
+export const RACE_TYPES = {
+  '5k':       { label: '5K',                      sport: 'run',  km: 5,    pace: 1.00, rest: 0, recover: 2, taperB: 6 },
+  '10k':      { label: '10K',                     sport: 'run',  km: 10,   pace: 1.04, rest: 0, recover: 3, taperB: 6 },
+  'half':     { label: 'Half marathon',           sport: 'run',  km: 21.1, pace: 1.09, rest: 1, recover: 5, taperB: 10 },
+  'marathon': { label: 'Marathon',                sport: 'run',  km: 42.2, pace: 1.16, rest: 3, recover: 7, taperB: 10 },
+  'sprint':   { label: 'Sprint triathlon',        sport: 'tri',  legs: [0.75, 20, 5],   rest: 0, recover: 2, taperB: 6 },
+  'olympic':  { label: 'Olympic triathlon',       sport: 'tri',  legs: [1.5, 40, 10],   rest: 1, recover: 3, taperB: 6 },
+  '70.3':     { label: 'Half-distance tri (70.3)', sport: 'tri', legs: [1.9, 90, 21.1], rest: 2, recover: 5, taperB: 10 },
+  'fondo':    { label: 'Gran fondo / bike event', sport: 'bike', km: 120,  rest: 0, recover: 3, taperB: 6 },
+  'swim':     { label: 'Open-water swim race',    sport: 'swim', km: 3,    rest: 0, recover: 2, taperB: 4 },
+};
+
+const RACE_SPORTS = T => T.sport === 'tri' ? ['swim', 'bike', 'run'] : [T.sport];
+
+// Days around a race the plan changes: [first day, last day].
+export function raceWindow(r) {
+  const T = RACE_TYPES[r.type];
+  if (!T) return [r.date, r.date];
+  const B = r.priority !== 'C';
+  const before = B && T.sport === 'run' && T.km >= 21 ? 42 : B ? T.taperB : 2;   // run block before a long B run race
+  const after = (B ? T.rest + T.recover : Math.ceil((T.rest + T.recover) / 2));
+  return [addDays(r.date, -before), addDays(r.date, after)];
+}
+
+// In the six weeks before a B-priority half or full marathon (or bike event), lean the week toward that sport.
+function raceFocus(week, ps) {
+  for (const r of ps.races || []) {
+    const T = RACE_TYPES[r.type];
+    if (!T || r.priority === 'C' || !(T.sport === 'run' && T.km >= 21 || T.sport === 'bike')) continue;
+    const d = daysBetween(week.monday, r.date);
+    if (d >= 7 && d <= 48) return { sport: T.sport, km: T.km, d };
+  }
+  return null;
+}
+
+// Rough finishing time, from your thresholds when you've set them.
+function raceMinutes(T, th, leg = null) {
+  const runPace = (th.run_pace || 330);           // s/km at threshold (default 5:30)
+  if (T.sport === 'run') return r5(T.km * runPace * T.pace / 60);
+  if (T.sport === 'bike') return r5(T.km / 27 * 60);
+  if (T.sport === 'swim') return r5(T.km * 10 * (th.css || 125) * 1.08 / 60);
+  const [sw, bk, rn] = T.legs;
+  return [r5(sw * 10 * (th.css || 125) * 1.1 / 60), r5(bk / (sw > 1.6 ? 30 : 31) * 60), r5(rn * runPace * (rn > 15 ? 1.22 : 1.12) / 60)][leg];
+}
+
+const EASY = { swim: 'Easy swim', bike: 'Easy spin', run: 'Easy run', strength: 'Strength', other: 'Easy session' };
+
+function eased(s, factor, why) {
+  const duration_min = Math.max(20, r5(s.duration_min * factor));
+  return {
+    ...s, kind: s.sport === 'strength' ? 'strength' : 'easy', title: EASY[s.sport] || s.title, duration_min,
+    distance_m: s.sport === 'swim' && s.distance_m ? r100(s.distance_m * duration_min / Math.max(1, s.duration_min)) : s.distance_m,
+    description: `${why} ${fmtMin(duration_min)} easy${s.sport === 'run' ? ', conversational' : s.sport === 'bike' ? ', light gears' : ''}.`,
+  };
+}
+
+export function applyKeyRaces(list, ps, th, mainRaceDate) {
+  let out = list;
+  const races = (ps.races || []).filter(r => RACE_TYPES[r.type] && r.date && r.date < addDays(mainRaceDate, -6)).sort((a, b) => a.date.localeCompare(b.date));
+  for (const r of races) {
+    const T = RACE_TYPES[r.type], B = r.priority !== 'C', sports = RACE_SPORTS(T);
+    const rest = B ? T.rest : Math.min(T.rest, 1), recover = B ? T.recover : Math.ceil(T.recover / 2);
+    const taper = B ? T.taperB : 2;
+    const sample = out.find(s => s.date === r.date) || out.find(s => s.date > r.date) || {};
+    out = out.flatMap(s => {
+      if (s.phase === 'race') return [s];                       // never touch the main race week
+      const d = daysBetween(r.date, s.date);                    // negative = before the race
+      if (d === 0) return [];                                   // race day: the race replaces it
+      if (d < 0 && -d <= taper) {
+        if (-d === 1) return B ? [] : [eased(s, 0.6, `Day before ${r.name}: stay fresh.`)];
+        if (s.sport === 'strength' && (B || -d <= 2)) return [];
+        if (-d === 2) return [eased(s, B ? 0.6 : 0.8, `Two days to ${r.name}.`)];
+        if (s.kind === 'long' || s.kind === 'brick') return [eased(s, B ? 0.6 : 0.85, `Taper for ${r.name}.`)];
+        return B ? [{ ...s, duration_min: Math.max(20, r5(s.duration_min * 0.8)), description: `Taper for ${r.name}: shorter, keep the quality. ${s.description}` }] : [s];
+      }
+      if (d > 0 && d <= rest) {
+        if (d === 1 && T.rest >= 1 && B) return [];             // full rest the day after a big race
+        return sports.includes(s.sport) || s.sport === 'strength' ? [] : [eased(s, 0.6, `Recovering from ${r.name}.`)];
+      }
+      if (d > 0 && d <= rest + recover) {
+        if (s.sport === 'strength') return d - rest <= 2 ? [] : [s];
+        return [eased(s, sports.includes(s.sport) ? 0.6 : 0.75, `Recovery after ${r.name}: no hard efforts yet.`)];
+      }
+      return [s];
+    });
+    const base = { phase: sample.phase || '', week: sample.week ?? 0, at_time: null, skip_reason: null };
+    const desc = `${T.label}${B ? ': a key race. Taper is built in, so go for it.' : ': a training race. Race it, but keep something in reserve.'}${r.notes ? ` ${r.notes}` : ''}`;
+    if (T.sport === 'tri') {
+      ['swim', 'bike', 'run'].forEach((sp, i) => out.push({ ...base, id: uid(), date: r.date, sport: sp, kind: 'race', title: `${r.name}: ${sp}`,
+        description: `${T.legs[i]} km. ${desc}`, duration_min: raceMinutes(T, th, i), distance_m: Math.round(T.legs[i] * 1000), sort: i }));
+    } else {
+      out.push({ ...base, id: uid(), date: r.date, sport: T.sport, kind: 'race', title: r.name, description: `${T.km} km. ${desc}`,
+        duration_min: raceMinutes(T, th), distance_m: Math.round(T.km * 1000), sort: 0 });
+    }
+    if (B) {
+      const sp = T.sport === 'tri' ? 'run' : T.sport;
+      out.push({ ...base, id: uid(), date: addDays(r.date, -1), sport: sp, kind: 'easy', title: 'Shake-out',
+        description: `${sp === 'run' ? "15' easy jog with 4×20 s strides" : sp === 'bike' ? "20' easy spin with 3×30 s quick" : "15' easy swim with a few fast 25s"}. Lay out your kit for ${r.name}.`,
+        duration_min: sp === 'bike' ? 20 : 15, distance_m: sp === 'swim' ? 600 : null, sort: 0 });
+    }
+  }
+  return out;
 }
 
 export function plannedMinutes(sessions) { return sessions.reduce((a, s) => a + (s.duration_min || 0), 0); }
