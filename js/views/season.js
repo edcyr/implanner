@@ -56,10 +56,13 @@ export function render() {
   weeks.forEach(w => { const g = groups[groups.length - 1]; if (g && g.phase === w.phase) g.n++; else groups.push({ phase: w.phase, n: 1, first: w.index }); });
 
   let html = `
-  <div class="page-head">
-    <div><h1>Your plan</h1><p>${weeks.length} weeks · ${fmtDay(weeks[0].monday, { month: 'short', day: 'numeric' })} to ${esc(p.race_name)} on ${fmtDay(p.race_date, { month: 'long', day: 'numeric', year: 'numeric' })}</p></div>
-    <div class="row"><button class="btn" data-action="add" data-date="${t}">Add session</button><a class="btn ghost" href="#/settings/races">Key races</a><a class="btn ghost" href="#/settings/plan">Plan settings</a></div>
-  </div>
+  <section class="photo-banner">
+    <img src="img/bike-checkin.jpg" srcset="img/bike-checkin-1000.jpg 1000w, img/bike-checkin.jpg 1500w" sizes="(max-width: 899px) 100vw, 1000px"
+      alt="Bike check-in at IRONMAN Mont-Tremblant: rows of racked bikes under a blue sky, with white tents and green hills behind">
+    <div class="pb-copy"><h1>Your plan</h1><p>${weeks.length} weeks · ${fmtDay(weeks[0].monday, { month: 'short', day: 'numeric' })} to ${esc(p.race_name)} on ${fmtDay(p.race_date, { month: 'long', day: 'numeric', year: 'numeric' })}</p></div>
+    <span class="photo-credit">Bike check-in, Mont-Tremblant 2013</span>
+  </section>
+  <div class="row" style="justify-content:flex-end;margin:-4px 0 16px"><button class="btn" data-action="add" data-date="${t}">Add session</button><a class="btn ghost" href="#/settings/races">Key races</a><a class="btn ghost" href="#/settings/plan">Plan settings</a></div>
   ${racePlanCard(p, { compact: true })}
   ${keyRaces().length ? `<section class="card" style="margin-bottom:16px"><div class="spread"><h2>Key races</h2><a class="btn small ghost" href="#/settings/races">Add or change</a></div>
     <div class="list" style="margin-top:10px">${keyRaces().map(r => {

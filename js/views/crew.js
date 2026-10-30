@@ -11,11 +11,16 @@ let data = null;          // last loaded crew data
 
 const nameOf = p => p?.name || 'Someone';
 
+const crewHero = msg => `<section class="card crew-hero">
+  <img src="img/crew.jpg" alt="Three triathletes in race kit, wearing finisher medals and smiling after a race">
+  <div class="ch-copy"><h1>Crew</h1><p>${esc(msg)}</p></div>
+</section>`;
+
 export function render(params, ctx) {
   if (!isCloud()) return `
-    <div class="page-head"><div><h1>Crew</h1><p>Train together: see each other's plans and cheer each other on.</p></div></div>
+    ${crewHero("Train together: see each other's plans and cheer each other on.")}
     <div class="empty"><h3>Sharing needs an account</h3><p>This copy of IMPlanner keeps everything on this device. Connect it to Supabase (see the README) to invite friends.</p></div>`;
-  return `<div class="page-head"><div><h1>Crew</h1><p>How everyone is doing against their own plan. No leaderboards.</p></div></div><div data-crew><div class="loading">Loading your crew…</div></div>`;
+  return `${crewHero('How everyone is doing against their own plan. No leaderboards: just showing up for each other.')}<div data-crew><div class="loading">Loading your crew…</div></div>`;
 }
 
 function invitePanel(crew) {

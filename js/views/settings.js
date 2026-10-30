@@ -23,7 +23,8 @@ export function render() {
   const theme = localStorage.getItem(THEME_KEY) || 'system';
   const nextMon = addDays(mondayOf(today()), 7);
   return `
-  <div class="page-head"><div><h1>Settings</h1></div></div>
+  <div class="page-head"><div><h1>Settings</h1>${isCloud() ? `<p>Signed in as <b>${esc(store.user?.email || '')}</b></p>` : ''}</div>
+    ${isCloud() ? '<button class="btn" data-signout>Sign out</button>' : ''}</div>
 
   <form class="card stack" data-form="profile">
     <h2>You and your race</h2>
@@ -88,7 +89,7 @@ export function render() {
   ${isCloud() ? `<section class="card stack" style="margin-top:16px">
     <h2>Account</h2>
     <p class="muted small">Signed in as <b>${esc(store.user?.email || '')}</b></p>
-    <div class="row"><button class="btn" data-action="password">Change password</button><button class="btn ghost" data-action="signout">Sign out</button></div>
+    <div class="row"><button class="btn" data-action="password">Change password</button><button class="btn ghost" data-signout>Sign out</button></div>
   </section>` : `<p class="note" style="margin-top:16px">This copy keeps everything in this browser. To share with friends, connect it to Supabase (see the README).</p>`}`;
 }
 
@@ -189,7 +190,6 @@ export const actions = {
     if (!ok) return;
     await localStore.clearAll(); await load(); go('#/setup');
   },
-  signout: async () => { await store.signOut(); location.hash = '#/today'; location.reload(); },
   password: () => openModal({
     title: 'Change password',
     body: `<form data-submit="save" id="pwf" class="stack"><label class="field"><span>New password</span><input type="password" name="pw" minlength="8" autocomplete="new-password" required></label></form>`,

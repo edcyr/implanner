@@ -128,6 +128,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .nav-link:hover { background: var(--wash); color: var(--ink); }
 .nav-link[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); }
 .nav-link[aria-current="page"] .ico { stroke-width: 2.2; }
+.nav-account { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 10px 0; font-size: 13px; color: var(--ink-2); }
+.nav-account:empty { display: none; }
+.nav-account span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.crew-hero { display: grid; grid-template-columns: 240px 1fr; gap: 0; padding: 0; overflow: hidden; margin-bottom: 18px; border: 0; background: var(--sunrise); color: #fff; position: relative; }
+.card.crew-hero::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: var(--tri); }
+.crew-hero img { width: 100%; height: 100%; min-height: 220px; max-height: 300px; object-fit: cover; object-position: 50% 22%; display: block; }
+.crew-hero .ch-copy { padding: 24px; align-self: center; }
+.crew-hero .ch-copy p { margin-top: 6px; opacity: .92; max-width: 460px; }
+@media (max-width: 640px) {
+  .card.crew-hero { grid-template-columns: 1fr; }
+  .crew-hero img { height: 260px; max-height: none; object-position: 50% 25%; }
+}
 .nav-foot { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--ink-2); }
 .nav-foot strong { color: var(--ink); display: block; font-size: 22px; font-weight: 650; line-height: 1.1; }
 
@@ -330,7 +342,12 @@ table.data.race-plan td, table.data.race-plan th { font-size: 14px; }
 
 /* ---------- hero / today ---------- */
 .hero { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center; }
-.hero.vivid { background: var(--sunrise); color: #fff; border: 0; padding: 24px; position: relative; overflow: hidden; }
+.hero.vivid {
+  /* the Mont-Tremblant finish arch behind a see-through sunrise, so text stays readable */
+  background: linear-gradient(125deg, rgba(28, 92, 171, .9) 0%, rgba(74, 58, 167, .84) 40%, rgba(156, 47, 110, .8) 72%, rgba(196, 80, 31, .78) 100%),
+    url('../img/finish-line-1000.jpg') 70% 35% / cover, #4a3aa7;
+  color: #fff; border: 0; padding: 24px; position: relative; overflow: hidden;
+}
 .hero.vivid::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: var(--tri); }
 .hero.vivid .kicker, .hero.vivid .countdown, .hero.vivid .countdown b, .hero.vivid .blurb { color: #fff; }
 .hero.vivid .kicker { opacity: .85; }

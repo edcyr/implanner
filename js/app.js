@@ -36,6 +36,7 @@ function renderShell() {
       <a class="brand" href="#/today"><span class="brand-mark">IM</span><span class="brand-name">IMPlanner</span></a>
       ${[...TABS, ['settings', 'Settings']].map(([k, l]) => `<a class="nav-link" data-nav="${k}" href="#/${k}">${navIcon(k)}${l}</a>`).join('')}
       <div class="nav-foot" data-countdown></div>
+      <div class="nav-account" data-account></div>
     </nav>
     <header class="topbar">
       <a class="brand" href="#/today"><span class="brand-mark">IM</span><span class="brand-name">IMPlanner</span></a>
@@ -53,6 +54,15 @@ function updateNav(name) {
   const cd = document.querySelector('[data-countdown]');
   const p = state.profile;
   if (cd) cd.innerHTML = p?.race_date && hasPlan() ? `<strong>${Math.max(0, daysTo(p.race_date))}</strong>days to ${esc(p.race_name)}` : '';
+  const acct = document.querySelector('[data-account]');
+  if (acct) acct.innerHTML = isCloud() && store.user
+    ? `<span title="${esc(store.user.email || '')}">${esc(p?.name || store.user.email || '')}</span><button class="btn small ghost" data-signout>Sign out</button>` : '';
+}
+
+async function signOut() {
+  await store.signOut();
+  location.hash = '#/today';
+  location.reload();
 }
 
 // ---- router ----------------------------------------------------------------------------
@@ -125,6 +135,7 @@ async function boot() {
   setRerender(rerender);
   const main = document.getElementById('main');
   main.innerHTML = '<div class="loading">Loading…</div>';
+  document.addEventListener('click', e => { if (e.target.closest('[data-signout]')) signOut(); });
   main.addEventListener('click', e => {
     const el = e.target.closest('[data-action]');
     const fn = el && current?.view.actions?.[el.dataset.action];
