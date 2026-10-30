@@ -6,6 +6,7 @@ import { chip, statusBadge, phaseLabel, toast } from '../ui.js';
 import { stackedColumns } from '../charts.js';
 import { openSession, openSessionEditor } from '../dialogs.js';
 import { rerender } from '../nav.js';
+import { racePlanCard } from './race-plan.js';
 
 export const title = 'Plan';
 let showAll = false;
@@ -26,6 +27,7 @@ function weekBlock(w, t) {
       <span class="phase-pill ph-${w.phase}">${esc(phaseLabel(w))}</span>
       ${w.recovery ? '<span class="tag">Easier week</span>' : ''}
       ${racesIn(w.monday, sun).map(r => `<span class="tag race-tag">🏁 ${esc(r.name)}</span>`).join('')}
+      ${list.some(s => s.kind === 'test') ? `<span class="tag">⏱ ${w.index === 0 ? 'Baseline tests' : 'Test week'}</span>` : ''}
       <span class="muted">${fmtRange(w.monday, sun)} · ${fmtHours(sum.planned)} planned</span>
       ${(past || isNow) && sum.adherence != null ? statusBadge(sum.adherence >= 0.85 ? 'on' : sum.adherence >= 0.5 ? 'close' : 'off', `${pctText(sum.adherence)} on plan`) : ''}
     </div>
@@ -58,6 +60,7 @@ export function render() {
     <div><h1>Your plan</h1><p>${weeks.length} weeks · ${fmtDay(weeks[0].monday, { month: 'short', day: 'numeric' })} to ${esc(p.race_name)} on ${fmtDay(p.race_date, { month: 'long', day: 'numeric', year: 'numeric' })}</p></div>
     <div class="row"><button class="btn" data-action="add" data-date="${t}">Add session</button><a class="btn ghost" href="#/settings/races">Key races</a><a class="btn ghost" href="#/settings/plan">Plan settings</a></div>
   </div>
+  ${racePlanCard(p, { compact: true })}
   ${keyRaces().length ? `<section class="card" style="margin-bottom:16px"><div class="spread"><h2>Key races</h2><a class="btn small ghost" href="#/settings/races">Add or change</a></div>
     <div class="list" style="margin-top:10px">${keyRaces().map(r => {
       const left = daysBetween(t, r.date), wk = weekFor(state.weeks, r.date);
@@ -84,6 +87,7 @@ export function render() {
 export function mount(root) {
   const t = today();
   const el = root.querySelector('[data-chart="season"]');
+  if (!el) return;
   const draw = () => stackedColumns(el, state.weeks.map(w => {
     const list = sessionsBetween(w.monday, addDays(w.monday, 6));
     const sum = summarize(list, state.bySession, t);

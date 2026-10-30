@@ -32,7 +32,9 @@ export function openModal({ title, body, foot = '', actions = {}, onMount, onClo
 }
 export function closeModal() {
   const dlg = document.getElementById('modal');
+  const f = modalClose; modalClose = null;          // run this dialog's onClose now, not on the delayed 'close' event
   if (dlg.open) dlg.close();
+  f?.();
 }
 export function initModal() {
   const dlg = document.getElementById('modal');
@@ -46,7 +48,8 @@ export function initModal() {
     const name = e.target.dataset.submit;
     if (name && modalActions[name]) modalActions[name](e.target, e, dlg);
   });
-  dlg.addEventListener('close', () => { const f = modalClose; modalClose = null; f?.(); });
+  // Escape or backdrop: the browser closed it. Ignore the event if another dialog has opened in the meantime.
+  dlg.addEventListener('close', () => { if (dlg.open) return; const f = modalClose; modalClose = null; f?.(); });
 }
 
 export function confirmDialog({ title, message, confirm = 'Confirm', danger = false }) {
@@ -110,8 +113,8 @@ export function doneText(st) {
 export function chip(s, bySession, opts = {}) {
   const st = sessionStatus(s, bySession);
   const label = `${SPORTS[s.sport]?.label}: ${s.title}, ${sessionMeta(s)}. ${STATUS[st.status].label}`;
-  return `<button class="chip st-${st.status}${s.kind === 'race' ? ' is-race' : ''}" data-action="${opts.action || 'open-session'}" data-id="${s.id}" ${opts.draggable ? 'draggable="true"' : ''} title="${esc(label)}" aria-label="${esc(label)}">
-    ${sportIcon(s.sport)}<span class="chip-txt">${s.at_time ? `<span class="chip-time">${esc(s.at_time.replace(/^0/, ''))}</span>` : ''}${esc(fmtShort(s.duration_min))}</span><span class="chip-mk" aria-hidden="true">${STATUS[st.status].mark}</span></button>`;
+  return `<button class="chip st-${st.status}${s.kind === 'race' ? ' is-race' : s.kind === 'test' ? ' is-test' : ''}" data-action="${opts.action || 'open-session'}" data-id="${s.id}" ${opts.draggable ? 'draggable="true"' : ''} title="${esc(label)}" aria-label="${esc(label)}">
+    ${sportIcon(s.sport)}<span class="chip-txt">${s.at_time ? `<span class="chip-time">${esc(s.at_time.replace(/^0/, ''))}</span>` : ''}${s.kind === 'race' ? '🏁 ' : s.kind === 'test' ? '⏱ ' : ''}${esc(fmtShort(s.duration_min))}</span><span class="chip-mk" aria-hidden="true">${STATUS[st.status].mark}</span></button>`;
 }
 
 // Seven-day strip of small sport tiles, colored by status.

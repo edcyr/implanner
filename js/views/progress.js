@@ -3,6 +3,7 @@ import { state, sessionsBetween } from '../state.js';
 import { summarize, onPlanStreak, pctText } from '../compliance.js';
 import { stackedColumns } from '../charts.js';
 import { phaseLabel } from '../ui.js';
+import { THRESHOLD_LABELS, TESTS } from '../pacing.js';
 
 export const title = 'Progress';
 const SPORT_COLOR = { swim: 'var(--swim)', bike: 'var(--bike)', run: 'var(--run)', strength: 'var(--strength)', other: 'var(--other)' };
@@ -18,12 +19,41 @@ function weekRows(t) {
   });
 }
 
+// Test results over time, each compared with the previous result for the same measure.
+function testsSection(t) {
+  const tests = [...(state.profile.settings.tests || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const next = state.sessions.find(x => x.kind === 'test' && x.date >= t);
+  const last = {};
+  const rows = [];
+  for (const test of tests) {
+    for (const [k, v] of Object.entries(test.result)) {
+      const [label, fmt, lowerBetter] = THRESHOLD_LABELS[k];
+      const prev = last[k];
+      let change = '—';
+      if (prev != null && prev !== v) {
+        const d = v - prev, better = lowerBetter ? d < 0 : d > 0;
+        change = k.startsWith('lthr') ? `${d > 0 ? '+' : ''}${d} bpm`
+          : k === 'ftp' ? `${better ? '▲' : '▼'} ${d > 0 ? '+' : ''}${d} W`
+          : `${better ? '▲' : '▼'} ${Math.abs(d)} s ${better ? 'faster' : 'slower'}`;
+      } else if (prev === v) change = 'same';
+      rows.unshift(`<tr><td>${fmtDay(test.date, { month: 'short', day: 'numeric' })}</td><td>${esc(label)}</td><td>${esc(fmt(v))}</td><td>${esc(change)}</td></tr>`);
+      last[k] = v;
+    }
+  }
+  return `<section class="section"><h2>Fitness tests</h2><div class="card">
+    ${rows.length ? `<table class="data"><thead><tr><th>Date</th><th>Measure</th><th>Result</th><th>Change</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      : `<p class="muted small">No results yet. Open a test session in your plan (${Object.values(TESTS).map(x => x.title.split(':')[0]).join(', ')}) and record your result: your zones update and your progress shows here.</p>`}
+    ${next ? `<p class="muted small" style="margin-top:10px">Next test: <a href="#/plan">${esc(next.title)}</a> on ${fmtDay(next.date, { weekday: 'long', month: 'long', day: 'numeric' })}.</p>` : ''}
+  </div></section>`;
+}
+
 export function render() {
   const t = today();
   const first = state.weeks[0];
   if (!first || t < first.monday) {
     return `<div class="page-head"><div><h1>Progress</h1></div></div>
-      <div class="empty"><h3>Your plan starts ${first ? fmtDay(first.monday, { weekday: 'long', month: 'long', day: 'numeric' }) : 'soon'}</h3><p>Come back after your first week to see how you're tracking.</p></div>`;
+      <div class="empty"><h3>Your plan starts ${first ? fmtDay(first.monday, { weekday: 'long', month: 'long', day: 'numeric' }) : 'soon'}</h3><p>Come back after your first week to see how you're tracking.</p></div>
+      ${first ? testsSection(t) : ''}`;
   }
   const due = sessionsBetween(first.monday, t);
   const season = summarize(due, state.bySession, t);
@@ -63,6 +93,8 @@ export function render() {
     <div class="card"><div class="chart" data-chart="adh" data-label="Percent of plan followed each week"></div>
       <p class="muted small" style="margin-top:8px">Doing far more than planned lowers the score the same way doing less does.</p></div></section>
 
+  ${testsSection(t)}
+
   <section class="section"><h2>By sport <span class="muted">this season</span></h2>
     <div class="list">${SPORT_ORDER.filter(k => totals[k]).map(k => `<div class="list-item"><span class="sport-ico s-${k}"></span>
       <div><div class="li-title">${SPORTS[k].label}</div><div class="li-sub">${totals[k].n} session${totals[k].n === 1 ? '' : 's'}</div></div>
@@ -74,6 +106,7 @@ export function mount(root) {
   const rows = weekRows(t);
   const upcoming = state.weeks.filter(w => w.monday > t).slice(0, 4);
   const hEl = root.querySelector('[data-chart="hours"]'), aEl = root.querySelector('[data-chart="adh"]');
+  if (!hEl || !aEl) return;                        // plan hasn't started: no charts yet
   const draw = () => {
     stackedColumns(hEl, [
       ...rows.map(r => ({

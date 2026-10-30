@@ -1,7 +1,8 @@
 // Season plan generator: periodized weeks (prep → base → build → peak → taper → race)
 // with sessions laid out on the athlete's chosen days. Everything it makes is editable.
 
-import { addDays, mondayOf, daysBetween, uid, fmtMin, fmtMMSS, clamp } from './util.js';
+import { addDays, mondayOf, daysBetween, uid, fmtMin, fmtMMSS, fmtHMS, clamp } from './util.js';
+import { triPlan, TESTS } from './pacing.js';
 
 export const PHASES = {
   prep:  { label: 'Prep',      blurb: 'Build the habit, technique and strength. Mostly easy.' },
@@ -93,6 +94,13 @@ export function weekFor(weeks, date) {
 function bikeZ(th, lo, hi) { return th?.ftp ? ` (${Math.round(th.ftp * lo)}–${Math.round(th.ftp * hi)} W)` : ''; }
 function runPace(th, lo, hi) { return th?.run_pace ? ` (${fmtMMSS(th.run_pace * lo)}–${fmtMMSS(th.run_pace * hi)} /km)` : ''; }
 function cssNote(th) { return th?.css ? ` (CSS ≈ ${fmtMMSS(th.css)} /100 m)` : ''; }
+// "Ironman effort" targets: your goal paces when a goal time is set, threshold-based ranges otherwise.
+function imSwim(th) { return th?.goal ? ` (goal pace ${fmtMMSS(th.goal.swimPace)} /100 m)` : ''; }
+function imRun(th) { return th?.goal ? ` (goal pace ${fmtMMSS(th.goal.runPace * 0.98)}–${fmtMMSS(th.goal.runPace * 1.02)} /km)` : runPace(th, 1.15, 1.25); }
+function imBike(th) {
+  const parts = [th?.ftp ? `${Math.round(th.ftp * 0.68)}–${Math.round(th.ftp * 0.75)} W` : '', th?.goal ? `goal ≈ ${th.goal.bikeKmh.toFixed(1)} km/h on the flat` : ''].filter(Boolean);
+  return parts.length ? ` (${parts.join('; ')})` : '';
+}
 const r5 = v => Math.max(5, Math.round(v / 5) * 5);
 const r100 = v => Math.max(100, Math.round(v / 100) * 100);
 
@@ -114,8 +122,8 @@ function swimWorkout(kind, D, th) {
     case 'endurance': return { title: 'Endurance swim', text: `WU ${wu} · ${n(400)}×400 steady Z2, 30 s rest — hold an even pace · CD ${cd}` };
     case 'css': return { title: 'CSS intervals', text: `WU ${wu} incl. 4×50 build · ${n(100)}×100 at CSS pace${css}, 10–15 s rest · CD ${cd}` };
     case 'threshold': return { title: 'Threshold swim', text: `WU ${wu} · ${n(300)}×300 at CSS + 2 s${css}, 20 s rest · CD ${cd}` };
-    case 'long': return { title: 'Long swim', text: `WU ${wu} · ${n(500)}×500 at Ironman effort, 30 s rest — sight every 6–8 strokes · CD ${cd}` };
-    case 'openwater': return { title: 'Open-water swim', text: `${D} m continuous at Ironman effort. Wetsuit practice, sighting every 6–8 strokes. Swim with a buddy.` };
+    case 'long': return { title: 'Long swim', text: `WU ${wu} · ${n(500)}×500 at Ironman effort${imSwim(th)}, 30 s rest — sight every 6–8 strokes · CD ${cd}` };
+    case 'openwater': return { title: 'Open-water swim', text: `${D} m continuous at Ironman effort${imSwim(th)}. Wetsuit practice, sighting every 6–8 strokes. Swim with a buddy.` };
     case 'speed': return { title: 'Sharpening swim', text: `WU ${wu} · 8×50 fast, 30 s rest · ${n(100, 0.6)}×100 race pace · CD ${cd}` };
     default: return { title: 'Easy swim', text: `${D} m easy, mixing strokes and drills. Loosen up.` };
   }
@@ -128,11 +136,11 @@ function bikeWorkout(kind, min, phase, th) {
     case 'sweetspot': { const k = reps(16, 2, 4); return { title: 'Sweet-spot intervals', text: `WU 15' · ${k}×12' sweet spot${bikeZ(th, 0.88, 0.94)}, 4' easy · Z2 to finish · CD 10'` }; }
     case 'threshold': { const k = reps(15, 2, 5); return { title: 'Threshold intervals', text: `WU 15' · ${k}×10' Z4${bikeZ(th, 0.91, 1.0)}, 5' easy · CD 10'` }; }
     case 'tempo': { const k = reps(25, 1, 4); return { title: 'Tempo ride', text: `WU 15' · ${k}×20' Z3${bikeZ(th, 0.76, 0.88)}, 5' easy · Z2 to finish · CD 10'` }; }
-    case 'racepace': { const k = reps(35, 1, 4); return { title: 'Race-pace ride', text: `WU 15' · ${k}×30' at Ironman effort${bikeZ(th, 0.68, 0.75)}, 5' easy · CD 10'. Eat and drink as on race day.` }; }
+    case 'racepace': { const k = reps(35, 1, 4); return { title: 'Race-pace ride', text: `WU 15' · ${k}×30' at Ironman effort${imBike(th)}, 5' easy · CD 10'. Eat and drink as on race day.` }; }
     case 'openers': return { title: 'Openers', text: `WU 15' · 4×1' high Z4, 2' easy · Z2 to finish. Legs should feel snappy, not tired.` };
     case 'long':
-      if (phase === 'peak') return { title: 'Race rehearsal ride', text: `${fmtMin(min)}: ride the middle ${fmtMin(r5(min * 0.6))} at Ironman effort${bikeZ(th, 0.68, 0.75)}. Full race nutrition and race kit.` };
-      if (phase === 'build') return { title: 'Long ride', text: `${fmtMin(min)} in Z2 with ${min >= 240 ? 3 : 2}×30' at Ironman effort${bikeZ(th, 0.68, 0.75)} in the second half. Fuel as on race day: 60–90 g carbs an hour.` };
+      if (phase === 'peak') return { title: 'Race rehearsal ride', text: `${fmtMin(min)}: ride the middle ${fmtMin(r5(min * 0.6))} at Ironman effort${imBike(th)}. Full race nutrition and race kit.` };
+      if (phase === 'build') return { title: 'Long ride', text: `${fmtMin(min)} in Z2 with ${min >= 240 ? 3 : 2}×30' at Ironman effort${imBike(th)} in the second half. Fuel as on race day: 60–90 g carbs an hour.` };
       return { title: 'Long ride', text: `${fmtMin(min)} steady Z2${bikeZ(th, 0.56, 0.75)}. Practise fuelling: 60–90 g carbs and a bottle an hour.` };
     case 'easy': return { title: 'Easy spin', text: `${fmtMin(min)} easy Z1–Z2, light gears, high cadence.` };
     default: return { title: 'Endurance ride', text: `${fmtMin(min)} steady Z2${bikeZ(th, 0.56, 0.75)}, cadence 85–95.` };
@@ -145,12 +153,12 @@ function runWorkout(kind, min, phase, th) {
     case 'hills': return { title: 'Hill repeats', text: `WU 15' · ${clamp(Math.round((min - 25) / 3), 4, 10)}×60 s uphill strong, jog down · Z2 to finish · CD 10'` };
     case 'tempo': return { title: 'Tempo run', text: `WU 15' · ${reps(10, 2, 5)}×8' Z3${runPace(th, 1.08, 1.15)}, 2' jog · CD 10'` };
     case 'threshold': return { title: 'Threshold run', text: `WU 15' · ${reps(7, 3, 6)}×5' Z4${runPace(th, 0.98, 1.04)}, 2' jog · CD 10'` };
-    case 'racepace': return { title: 'Race-pace run', text: `WU 15' · ${reps(18, 1, 3)}×15' at Ironman pace${runPace(th, 1.15, 1.25)}, 3' easy · CD 10'` };
+    case 'racepace': return { title: 'Race-pace run', text: `WU 15' · ${reps(18, 1, 3)}×15' at Ironman pace${imRun(th)}, 3' easy · CD 10'` };
     case 'openers': return { title: 'Run openers', text: `WU 10' · 4×30 s quick, 90 s jog · easy to finish.` };
-    case 'brick': return { title: 'Brick run', text: `Straight off the bike: ${fmtMin(min)}. First 5' relaxed, then settle into Ironman effort. Practise a quick transition.` };
+    case 'brick': return { title: 'Brick run', text: `Straight off the bike: ${fmtMin(min)}. First 5' relaxed, then settle into Ironman effort${imRun(th)}. Practise a quick transition.` };
     case 'long':
-      if (phase === 'peak') return { title: 'Long run', text: `${fmtMin(min)}: middle third at Ironman pace${runPace(th, 1.15, 1.25)}. Race fuel and shoes.` };
-      if (phase === 'build') return { title: 'Long run', text: `${fmtMin(min)} in Z2; last ${fmtMin(Math.min(30, r5(min * 0.25)))} at Ironman pace${runPace(th, 1.15, 1.25)}. Take a gel every 30–40'.` };
+      if (phase === 'peak') return { title: 'Long run', text: `${fmtMin(min)}: middle third at Ironman pace${imRun(th)}. Race fuel and shoes.` };
+      if (phase === 'build') return { title: 'Long run', text: `${fmtMin(min)} in Z2; last ${fmtMin(Math.min(30, r5(min * 0.25)))} at Ironman pace${imRun(th)}. Take a gel every 30–40'.` };
       return { title: 'Long run', text: `${fmtMin(min)} steady Z2${runPace(th, 1.22, 1.35)}. Practise walking aid stations for 30 s.` };
     case 'strides': return { title: 'Easy run + strides', text: `${fmtMin(min)} easy Z1–Z2, conversational. Finish with 4×20 s strides.` };
     default: return { title: 'Easy run', text: `${fmtMin(min)} easy Z1–Z2, conversational.` };
@@ -240,6 +248,7 @@ export function weekSessions(week, ps, th) {
   const L = resolveLayout(ps);
   const ride = +ps.long_ride_day, longRun = +ps.long_run_day;
   const out = [];
+  const test = sp => ({ title: TESTS[sp].title, text: `${week.index === 0 ? 'Baseline test: where you’re starting from.' : 'End-of-block test: see how far you’ve come.'} ${TESTS[sp].text}` });
   const add = (day, sport, kind, duration_min, built, sort, extra = {}) => out.push({
     id: uid(), date: addDays(week.monday, day), sport, kind,
     title: built.title, description: (recovery ? 'Easier week: keep it relaxed. ' : '') + built.text,
@@ -265,10 +274,11 @@ export function weekSessions(week, ps, th) {
   if (swimDays.length) {
     const kinds = swimDays.length === 1 ? [K.swimA]
       : swimDays.map((_, i) => i === swimDays.length - 1 ? K.swimD : i % 2 ? K.swimC : K.swimA);
+    if (week.test) kinds[0] = 'test';
     const mins = allocate(triMin * split.swim, kinds.map((k, i) => ({ w: i === kinds.length - 1 && kinds.length > 1 ? 1.25 : 1, min: 30, max: 90 })));
     swimDays.forEach((day, i) => {
-      const D = swimDistance(mins[i], th);
-      add(day, 'swim', kinds[i], mins[i], swimWorkout(kinds[i], D, th), 0, { distance_m: D });
+      const m = kinds[i] === 'test' ? TESTS.swim.minutes : mins[i], D = swimDistance(m, th);
+      add(day, 'swim', kinds[i], m, kinds[i] === 'test' ? test('swim') : swimWorkout(kinds[i], D, th), 0, { distance_m: D });
     });
   }
 
@@ -278,8 +288,19 @@ export function weekSessions(week, ps, th) {
     ...bikeOthers.map((_, i) => ({ kind: i === 0 ? K.bikeA : i === 1 ? K.bikeC : 'endurance', w: i === 0 ? 1 : 0.9, min: 45, max: i === 0 ? 120 : 180 })),
     { kind: 'long', w: LONG_RIDE_W[phase] * (recovery ? 0.8 : 1), min: 60, max: 360 },
   ];
+  // In test weeks each test gets its own day where the layout allows; the week's other quality goes easy.
+  const testDays = new Set(week.test && swimDays.length ? [swimDays[0]] : []);
+  const pickTestSlot = days => { const j = days.findIndex(d => !testDays.has(d)); return j >= 0 ? j : 0; };
+  if (week.test && bikeOthers.length) {
+    const j = pickTestSlot(bikeOthers);
+    if (j !== 0) bikeSlots[0].kind = 'endurance';
+    bikeSlots[j].kind = 'test'; testDays.add(bikeOthers[j]);
+  }
   const bikeMins = allocate(triMin * split.bike, bikeSlots);
-  [...bikeOthers, ride].forEach((day, i) => add(day, 'bike', bikeSlots[i].kind, bikeMins[i], bikeWorkout(bikeSlots[i].kind, bikeMins[i], phase, th), 1));
+  [...bikeOthers, ride].forEach((day, i) => {
+    const k = bikeSlots[i].kind, m = k === 'test' ? TESTS.bike.minutes : bikeMins[i];
+    add(day, 'bike', k, m, k === 'test' ? test('bike') : bikeWorkout(k, m, phase, th), 1);
+  });
 
   // Run: long run on its day; the first other run is the quality one, the rest easy; brick after the long ride.
   const runOthers = L.run.days.filter(d => d !== longRun);
@@ -289,10 +310,15 @@ export function weekSessions(week, ps, th) {
     { kind: 'long', w: focus === 'run' ? 1.8 : 1.5, min: longRunMin, max: focus === 'run' ? 180 : phase === 'prep' ? 90 : 165 },
     ...(brickW ? [{ kind: 'brick', w: brickW, min: 10, max: 45 }] : []),
   ];
+  if (week.test && runOthers.length) {
+    const j = pickTestSlot(runOthers);
+    if (j !== 0) runSlots[0].kind = K.runD;
+    runSlots[j].kind = 'test';
+  }
   const runMins = allocate(triMin * split.run, runSlots);
   [...runOthers, longRun, ...(brickW ? [ride] : [])].forEach((day, i) => {
-    const sl = runSlots[i];
-    add(day, 'run', sl.kind, runMins[i], runWorkout(sl.kind, runMins[i], phase, th), sl.kind === 'brick' ? 3 : 2,
+    const sl = runSlots[i], m = sl.kind === 'test' ? TESTS.run.minutes : runMins[i];
+    add(day, 'run', sl.kind, m, sl.kind === 'test' ? test('run') : runWorkout(sl.kind, m, phase, th), sl.kind === 'brick' ? 3 : 2,
       sl.kind === 'brick' ? { at_time: L.bike.time || null } : {});
   });
 
@@ -301,27 +327,32 @@ export function weekSessions(week, ps, th) {
 }
 
 function raceWeekSessions(week, raceDate, raceName, th) {
+  const g = th.goal;
   const s = (offset, sport, kind, duration_min, title, description, sort = 0, distance_m = null) => ({
     id: uid(), date: addDays(raceDate, offset), sport, kind, title, description, duration_min, distance_m,
     at_time: null, phase: 'race', week: week.index, sort, skip_reason: null,
   });
   const list = [
     s(-5, 'swim', 'easy', 30, 'Easy swim', `1,000 m easy with 4×100 at race pace${cssNote(th)}.`, 0, 1000),
-    s(-4, 'bike', 'openers', 60, 'Bike openers', `60' Z2 with 3×5' at Ironman effort${bikeZ(th, 0.68, 0.75)}.`, 1),
+    s(-4, 'bike', 'openers', 60, 'Bike openers', `60' Z2 with 3×5' at Ironman effort${imBike(th)}.`, 1),
     s(-3, 'run', 'openers', 30, 'Run openers', `30' easy with 4×20 s strides.`, 2),
     s(-2, 'swim', 'easy', 20, 'Shake-out swim', `20' easy. Check goggles and wetsuit.`, 0, 800),
     s(-1, 'bike', 'easy', 30, 'Shake-out ride', `30' easy spin with 3×1' at race effort. Check the bike, then rack it.`, 1),
     s(-1, 'run', 'easy', 10, 'Shake-out jog', `10' easy jog. Feet up the rest of the day.`, 2),
-    s(0, 'swim', 'race', 80, `${raceName}: swim`, '3.8 km. Start calm, find feet, sight often.', 0, 3800),
-    s(0, 'bike', 'race', 390, `${raceName}: bike`, '180 km. Ride your plan, not the people around you. Eat and drink on schedule.', 1),
-    s(0, 'run', 'race', 285, `${raceName}: run`, '42.2 km. Easy for the first 10 km, then hold on. Enjoy the finish line.', 2),
+    s(0, 'swim', 'race', g ? r5(g.swim / 60) : 80, `${raceName}: swim`, `3.8 km.${g ? ` Target ${fmtHMS(g.swim)} (${fmtMMSS(g.swimPace)} /100 m).` : ''} Start calm, find feet, sight often.`, 0, 3800),
+    s(0, 'bike', 'race', g ? r5(g.bike / 60) : 390, `${raceName}: bike`, `180 km.${g ? ` Target ${fmtHMS(g.bike)} (about ${g.bikeKmh.toFixed(1)} km/h)${th.ftp ? `, holding${bikeZ(th, 0.68, 0.75)}` : ''}.` : ''} Ride your plan, not the people around you. Eat and drink on schedule.`, 1),
+    s(0, 'run', 'race', g ? r5(g.run / 60) : 285, `${raceName}: run`, `42.2 km.${g ? ` Target ${fmtHMS(g.run)} (${fmtMMSS(g.runPace)} /km; first 10 km at ${fmtMMSS(g.runPace + 10)}).` : ''} Easy early, then hold on. Enjoy the finish line.`, 2),
   ];
   return list.filter(x => x.date >= week.monday);
 }
 
 export function generatePlan(profile, fromDate = null) {
-  const ps = profile.settings.plan, th = profile.settings.thresholds || {};
+  const ps = profile.settings.plan, th0 = profile.settings.thresholds || {};
+  const th = { ...th0, goal: ps.goal_time_s ? triPlan(ps.goal_time_s, th0) : null };
   const weeks = buildWeeks(ps, profile.race_date);
+  if (ps.tests !== false) weeks.forEach((w, i) => {
+    w.test = i === 0 || (!w.recovery && weeks[i + 1]?.recovery && (w.phase === 'base' || w.phase === 'build'));
+  });
   let sessions = [];
   for (const w of weeks) {
     sessions.push(...(w.phase === 'race' ? raceWeekSessions(w, profile.race_date, profile.race_name || 'Race', th) : weekSessions(w, ps, th)));
@@ -421,11 +452,15 @@ export function applyKeyRaces(list, ps, th, mainRaceDate) {
     const base = { phase: sample.phase || '', week: sample.week ?? 0, at_time: null, skip_reason: null };
     const desc = `${T.label}${B ? ': a key race. Taper is built in, so go for it.' : ': a training race. Race it, but keep something in reserve.'}${r.notes ? ` ${r.notes}` : ''}`;
     if (T.sport === 'tri') {
+      const g = r.goal_s ? triPlan(r.goal_s, th, { swim: T.legs[0], bike: T.legs[1], run: T.legs[2] }) : null;
+      const legGoal = [g && `Target ${fmtHMS(g.swim)} (${fmtMMSS(g.swimPace)} /100 m). `, g && `Target ${fmtHMS(g.bike)} (about ${g.bikeKmh.toFixed(1)} km/h). `, g && `Target ${fmtHMS(g.run)} (${fmtMMSS(g.runPace)} /km). `];
       ['swim', 'bike', 'run'].forEach((sp, i) => out.push({ ...base, id: uid(), date: r.date, sport: sp, kind: 'race', title: `${r.name}: ${sp}`,
-        description: `${T.legs[i]} km. ${desc}`, duration_min: raceMinutes(T, th, i), distance_m: Math.round(T.legs[i] * 1000), sort: i }));
+        description: `${T.legs[i]} km. ${legGoal[i] || ''}${desc}`, duration_min: g ? r5([g.swim, g.bike, g.run][i] / 60) : raceMinutes(T, th, i), distance_m: Math.round(T.legs[i] * 1000), sort: i }));
     } else {
-      out.push({ ...base, id: uid(), date: r.date, sport: T.sport, kind: 'race', title: r.name, description: `${T.km} km. ${desc}`,
-        duration_min: raceMinutes(T, th), distance_m: Math.round(T.km * 1000), sort: 0 });
+      const pace = !r.goal_s ? '' : T.sport === 'run' ? `${fmtMMSS(r.goal_s / T.km)} /km` : T.sport === 'swim' ? `${fmtMMSS(r.goal_s / (T.km * 10))} /100 m` : `${(T.km / (r.goal_s / 3600)).toFixed(1)} km/h`;
+      out.push({ ...base, id: uid(), date: r.date, sport: T.sport, kind: 'race', title: r.name,
+        description: `${T.km} km. ${r.goal_s ? `Goal ${fmtHMS(r.goal_s)}: ${pace} on average${T.sport === 'run' && T.km >= 21 ? ', a little easier for the first few km' : ''}. ` : ''}${desc}`,
+        duration_min: r.goal_s ? r5(r.goal_s / 60) : raceMinutes(T, th), distance_m: Math.round(T.km * 1000), sort: 0 });
     }
     if (B) {
       const sp = T.sport === 'tri' ? 'run' : T.sport;

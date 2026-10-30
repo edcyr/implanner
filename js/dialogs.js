@@ -1,7 +1,8 @@
 // Dialogs shared across pages: view a planned session, log it, skip it, edit or add one.
 
-import { esc, uid, today, fmtDay, fmtMin, fmtHMS, parseHMS, fmtDist, SPORTS, SPORT_ORDER, SKIP_REASONS, sportIcon, addDays } from './util.js';
-import { state, saveSession, deleteSession, saveActivity, sessionById, activitiesFor, sessionsBetween } from './state.js';
+import { esc, uid, today, fmtDay, fmtMin, fmtHMS, parseHMS, parseMMSS, fmtDist, SPORTS, SPORT_ORDER, SKIP_REASONS, sportIcon, addDays } from './util.js';
+import { state, saveSession, deleteSession, saveActivity, sessionById, activitiesFor, sessionsBetween, saveProfile, regenerateFrom } from './state.js';
+import { deriveTest, THRESHOLD_LABELS } from './pacing.js';
 import { sessionStatus } from './compliance.js';
 import { openModal, closeModal, confirmDialog, toast, statusBadge, sessionMeta, feelPicker, pickFeel, feelChip } from './ui.js';
 import { rerender } from './nav.js';
@@ -27,6 +28,7 @@ export function openSession(id) {
         ${acts.map(a => `<a class="list-item" style="border:1px solid var(--border);border-radius:10px;margin-top:10px" href="#/activity/${a.id}">
             ${sportIcon(a.sport)}<div><div class="li-title">${esc(a.title || 'Logged')}</div>
             <div class="li-sub">${fmtHMS(a.duration_s)}${a.distance_m ? ` · ${fmtDist(a.distance_m, a.sport)}` : ''} ${feelChip(a.feel)}</div></div><span class="li-end">Open ›</span></a>`).join('')}
+        ${s.kind === 'test' ? testForm(s) : ''}
       </div>
     </div>`;
   const canLog = !acts.length;
@@ -43,8 +45,43 @@ export function openSession(id) {
       unskip: async () => { await saveSession({ ...s, skip_reason: null }); closeModal(); rerender(); },
       log: () => openLogForm({ session: s }),
       done: async () => { await quickDone(s); closeModal(); toast('Nice work. Logged as planned.'); rerender(); },
+      'save-test': f => saveTestResult(s, f),
     },
   });
+}
+
+// ---- fitness test results -------------------------------------------------------------------
+const TEST_FIELDS = {
+  swim: [['t400', '400 m time (m:ss)', 'text', '7:20'], ['t200', '200 m time (m:ss)', 'text', '3:30']],
+  bike: [['p20', '20′ average power (W)', 'number', '230'], ['hr20', '20′ average heart rate (bpm)', 'number', '160']],
+  run: [['km', 'Distance in 30′ (km)', 'number', '6.2'], ['hr', 'Average heart rate, last 20′ (bpm)', 'number', '170']],
+};
+
+function testForm(s) {
+  const prev = (state.profile.settings.tests || []).find(t => t.session_id === s.id);
+  return `<form data-submit="save-test" class="card stack" style="background:var(--wash);border:0;margin-top:14px">
+    <b>Record your result</b>
+    ${prev ? `<p class="small">Recorded: ${Object.entries(prev.result).map(([k, v]) => `${THRESHOLD_LABELS[k][0]} <b>${esc(THRESHOLD_LABELS[k][1](v))}</b>`).join(' · ')}</p>` : ''}
+    <div class="form-grid">${TEST_FIELDS[s.sport].map(([name, label, type, ph]) => `<label class="field"><span>${label}</span>
+      <input type="${type}" name="${name}" ${type === 'number' ? 'step="any" min="0" inputmode="decimal"' : 'inputmode="numeric"'} placeholder="${ph}" value="${esc(prev?.inputs?.[name] ?? '')}"></label>`).join('')}</div>
+    <p class="muted small">${s.sport === 'bike' ? 'No power meter? Heart rate alone sets your bike threshold heart rate.' : s.sport === 'run' ? 'Either field works; both is best.' : 'Swim the 400 first, then the 200.'}</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn primary">Save result</button></div>
+  </form>`;
+}
+
+async function saveTestResult(s, f) {
+  const raw = Object.fromEntries(new FormData(f).entries());
+  const v = s.sport === 'swim' ? { t400: parseMMSS(raw.t400), t200: parseMMSS(raw.t200) } : Object.fromEntries(Object.entries(raw).map(([k, x]) => [k, x === '' ? null : +x]));
+  const result = deriveTest(s.sport, v);
+  if (!result) { toast(s.sport === 'swim' ? 'Enter both times, the 400 slower than the 200.' : 'Enter at least one result.'); return; }
+  const p = state.profile, th = p.settings.thresholds || {};
+  const tests = [...(p.settings.tests || []).filter(t => t.session_id !== s.id), { id: uid(), session_id: s.id, date: s.date, sport: s.sport, inputs: raw, result }];
+  await saveProfile({ settings: { ...p.settings, tests, thresholds: { ...th, ...result } } });
+  const changes = Object.entries(result).map(([k, val]) => `${THRESHOLD_LABELS[k][0]} ${THRESHOLD_LABELS[k][1](val)}${th[k] === val ? ' (no change)' : th[k] ? ` (was ${THRESHOLD_LABELS[k][1](th[k])})` : ''}`).join(', ');
+  closeModal();
+  const ok = await confirmDialog({ title: 'Zones updated', message: `${changes}. Update your upcoming workouts with the new zones? Planned sessions from tomorrow on are rebuilt with your new paces and watts. Logged workouts stay; changes you made by hand to upcoming sessions are replaced.`, confirm: 'Update my workouts' });
+  if (ok) { await regenerateFrom(addDays(today(), 1)); toast('Upcoming workouts updated'); } else toast('Result saved');
+  rerender();
 }
 
 export async function quickDone(s) {

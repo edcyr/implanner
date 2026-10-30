@@ -249,7 +249,14 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .chip.st-missed .chip-txt { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--critical); }
 .chip.dragging { opacity: .4; }
 .chip.is-race { border-color: var(--phase-race); box-shadow: inset 0 0 0 1px var(--phase-race); }
-.chip.is-race .chip-txt::before { content: '🏁 '; }
+.race-legs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
+.race-leg { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; border-radius: 10px; background: var(--wash); border-top: 3px solid var(--sc, var(--axis)); min-width: 0; }
+.race-leg.transition { --sc: var(--axis); }
+.race-leg b { font-size: 12px; color: var(--ink-2); }
+.race-leg span { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.race-leg small { font-size: 12px; color: var(--ink-2); }
+@media (max-width: 640px) { .race-legs { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+table.data.race-plan td, table.data.race-plan th { font-size: 14px; }
 .race-flag { font-size: 20px; line-height: 1; width: 30px; text-align: center; }
 .tag.race-tag { background: color-mix(in srgb, var(--phase-race) 16%, var(--surface)); color: var(--ink); }
 

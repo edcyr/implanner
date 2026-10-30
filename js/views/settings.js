@@ -2,6 +2,8 @@ import { esc, today, addDays, mondayOf, fmtMMSS, parseMMSS, fmtDay } from '../ut
 import { state, saveProfile, regenerateFrom, regenerateRange, keyRaces, isCloud, exportData, importData, load } from '../state.js';
 import { raceWindow } from '../plan.js';
 import { racesCardHtml, mountRacesCard } from './races-card.js';
+import { racePlanCard } from './race-plan.js';
+import { parseGoal, fmtGoal } from '../pacing.js';
 import { store, localStore } from '../store.js';
 import { toast, confirmDialog, openModal, closeModal } from '../ui.js';
 import { planFields, readPlanFields, validatePlan, planPreview, drawPreview, wirePlanFields } from './setup.js';
@@ -29,9 +31,12 @@ export function render() {
       <label class="field"><span>Your name</span><input type="text" name="name" maxlength="60" value="${esc(p.name)}" required></label>
       <label class="field"><span>Race</span><input type="text" name="race_name" maxlength="80" value="${esc(p.race_name)}" required></label>
       <label class="field"><span>Race date</span><input type="date" name="race_date" value="${p.race_date}" required><small>Changing it? Rebuild your plan below too.</small></label>
+      <label class="field"><span>Goal finish time (h:mm)</span><input type="text" name="goal_time" inputmode="numeric" placeholder="e.g. 12:30" value="${esc(fmtGoal(ps.goal_time_s))}"><small>Optional. Sets your race-pace targets.</small></label>
     </div>
     <div class="row" style="justify-content:flex-end"><button class="btn primary">Save</button></div>
   </form>
+
+  ${racePlanCard(p)}
 
   <form class="card stack" data-form="zones" style="margin-top:16px">
     <h2>Training zones</h2>
@@ -88,7 +93,7 @@ export function render() {
 }
 
 export function mount(root, params) {
-  if (['plan', 'garmin', 'races'].includes(params[0])) requestAnimationFrame(() => root.querySelector(`#${params[0]}`)?.scrollIntoView({ block: 'start' }));
+  if (['plan', 'garmin', 'races', 'race-plan'].includes(params[0])) requestAnimationFrame(() => root.querySelector(`#${params[0]}`)?.scrollIntoView({ block: 'start' }));
   if (isCloud()) mountGarminCard(root);
   mountRacesCard(root, {
     get: keyRaces,
@@ -123,8 +128,17 @@ export function mount(root, params) {
     const f = e.target, kind = f.dataset.form, p = state.profile;
     try {
       if (kind === 'profile') {
-        await saveProfile({ name: f.name.value.trim(), race_name: f.race_name.value.trim(), race_date: f.race_date.value });
-        toast('Saved');
+        const goal = parseGoal(f.goal_time.value, true);
+        if (f.goal_time.value.trim() && !(goal > 6 * 3600 && goal < 18 * 3600)) { toast('Enter a goal like 12:30 (between 6 and 17 hours).'); return; }
+        const changed = (goal || null) !== (p.settings.plan.goal_time_s || null);
+        await saveProfile({ name: f.name.value.trim(), race_name: f.race_name.value.trim(), race_date: f.race_date.value,
+          settings: { ...p.settings, plan: { ...p.settings.plan, goal_time_s: goal || null } } });
+        if (changed && await confirmDialog({ title: goal ? `Train for ${fmtGoal(goal)}?` : 'Remove your goal time?',
+          message: `${goal ? 'Your race-pace workouts and race day will use your goal paces.' : 'Race-pace workouts go back to effort-based targets.'} Planned sessions from tomorrow on are rebuilt; workouts you've logged stay, and changes you made by hand to upcoming sessions are replaced.`,
+          confirm: 'Update my workouts' })) {
+          await regenerateFrom(addDays(today(), 1)); toast('Workouts updated with your goal paces');
+        } else toast('Saved');
+        rerender();
       } else if (kind === 'zones') {
         const n = v => v === '' ? null : +v;
         const thresholds = { ftp: n(f.ftp.value), lthr_bike: n(f.lthr_bike.value), lthr_run: n(f.lthr_run.value), run_pace: parseMMSS(f.run_pace.value), css: parseMMSS(f.css.value) };
@@ -137,7 +151,7 @@ export function mount(root, params) {
         const from = f.from.value || today();
         const ok = await confirmDialog({ title: 'Rebuild your plan?', message: `Planned sessions from ${fmtDay(from, { weekday: 'long', month: 'long', day: 'numeric' })} on will be replaced. Logged workouts are kept.`, confirm: 'Rebuild' });
         if (!ok) return;
-        await saveProfile({ settings: { ...p.settings, plan: { ...ps, races: p.settings.plan.races || [] } } });
+        await saveProfile({ settings: { ...p.settings, plan: { ...ps, races: p.settings.plan.races || [], goal_time_s: p.settings.plan.goal_time_s ?? null } } });
         const r = await regenerateFrom(from);
         toast(`Plan rebuilt: ${r.added} sessions`); go('#/plan');
       } else if (kind === 'sharing') {

@@ -5,6 +5,7 @@ import { stackedColumns } from '../charts.js';
 import { toast } from '../ui.js';
 import { go } from '../nav.js';
 import { racesCardHtml, mountRacesCard } from './races-card.js';
+import { parseGoal, fmtGoal } from '../pacing.js';
 
 let setupRaces = null;     // key races added before the plan exists
 
@@ -50,6 +51,7 @@ export function planFields(ps) {
         <label class="field"><span>Long ride day</span><select name="long_ride_day">${dayOptions(ps.long_ride_day)}</select></label>
         <label class="field"><span>Long run day</span><select name="long_run_day">${dayOptions(ps.long_run_day)}</select></label>
         <label class="check wide"><input type="checkbox" name="bricks" ${ps.bricks !== false ? 'checked' : ''}><span><b>Brick run after the long ride</b><br><span class="muted small">A short run straight off the bike, from the base phase on</span></span></label>
+        <label class="check wide"><input type="checkbox" name="tests" ${ps.tests !== false ? 'checked' : ''}><span><b>Fitness tests</b><br><span class="muted small">A swim CSS test, a 20-minute bike test and a 30-minute run time trial: a baseline in week 1, then in the last hard week of each block (before the easier week) through base and build. Your results update your training zones.</span></span></label>
       </div>
       <div data-typical></div>
     </div>`;
@@ -64,7 +66,8 @@ export function readPlanFields(form) {
   return {
     start_date: mondayOf(v.start_date),
     current_hours: +v.current_hours, peak_hours: +v.peak_hours, recovery_every: +v.recovery_every,
-    long_ride_day: +v.long_ride_day, long_run_day: +v.long_run_day, bricks: !!v.bricks, layout,
+    long_ride_day: +v.long_ride_day, long_run_day: +v.long_run_day, bricks: !!v.bricks, tests: !!v.tests, layout,
+    ...('goal_time' in v ? { goal_time_s: parseGoal(v.goal_time, true) || null } : {}),
   };
 }
 
@@ -73,6 +76,7 @@ export function validatePlan(ps, raceDate) {
   if (!L.swim.days.length) return 'Pick at least one swim day.';
   if (ps.long_ride_day === ps.long_run_day) return 'Pick different days for the long ride and the long run.';
   if (!(ps.current_hours > 0) || !(ps.peak_hours > 0)) return 'Enter your weekly hours.';
+  if (ps.goal_time_s && !(ps.goal_time_s > 6 * 3600 && ps.goal_time_s < 18 * 3600)) return 'Enter a goal finish time like 12:30 (between 6 and 17 hours).';
   if (ps.peak_hours < ps.current_hours) return 'Peak hours should be at least your current hours.';
   if (daysBetween(ps.start_date, raceDate) < 28) return 'The race needs to be at least 4 weeks after the plan starts.';
   return null;
@@ -145,6 +149,7 @@ export async function render() {
         <label class="field"><span>Your name</span><input type="text" name="name" maxlength="60" value="${esc(p.name)}" placeholder="Shown to your crew" required></label>
         <label class="field"><span>Race</span><input type="text" name="race_name" maxlength="80" value="${esc(p.race_name)}" required></label>
         <label class="field"><span>Race date</span><input type="date" name="race_date" value="${p.race_date}" required>${p.race_date === RACE_PRESET.date ? '<small>Sunday, August 8, 2027 per the published schedule</small>' : ''}</label>
+        <label class="field"><span>Goal finish time (h:mm)</span><input type="text" name="goal_time" inputmode="numeric" placeholder="e.g. 12:30" value="${esc(fmtGoal(p.settings.plan.goal_time_s))}"><small>Optional. Sets your race-pace targets; change it any time.</small></label>
       </div>
     </section>
     <section class="card stack"><h2>Your training week</h2>${planFields(p.settings.plan)}</section>

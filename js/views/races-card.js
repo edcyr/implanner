@@ -3,6 +3,7 @@
 
 import { esc, uid, today, addDays, fmtDay, daysBetween } from '../util.js';
 import { RACE_TYPES } from '../plan.js';
+import { parseGoal, fmtGoal } from '../pacing.js';
 import { toast } from '../ui.js';
 
 const TYPE_OPTIONS = Object.entries(RACE_TYPES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('');
@@ -17,6 +18,7 @@ export const racesCardHtml = (intro = true) => `
       <label class="field"><span>Date</span><input type="date" name="date" required></label>
       <label class="field"><span>Distance</span><select name="type">${TYPE_OPTIONS}</select></label>
       <label class="field"><span>How much it matters</span><select name="priority"><option value="B">B: taper + recover</option><option value="C">C: training race</option></select></label>
+      <label class="field"><span>Goal time (optional)</span><input type="text" name="goal" inputmode="numeric" placeholder="h:mm:ss, e.g. 3:59:00"><small>Turned into a target pace for race day</small></label>
       <label class="field wide"><span>Notes (optional)</span><input type="text" name="notes" maxlength="200" placeholder="Goal, start time, anything to remember"></label>
       <div class="row wide" style="justify-content:flex-end"><button class="btn primary">Add race</button></div>
     </form>
@@ -28,7 +30,7 @@ function listHtml(races) {
     const T = RACE_TYPES[r.type], left = daysBetween(today(), r.date);
     return `<div class="list-item"><span class="race-flag" aria-hidden="true">🏁</span>
       <div><div class="li-title">${esc(r.name)} <span class="tag">${r.priority === 'C' ? 'C race' : 'B race'}</span></div>
-      <div class="li-sub">${esc(fmtDay(r.date, { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }))} · ${esc(T?.label || r.type)}${left >= 0 ? ` · in ${left} days` : ' · done'}${r.notes ? ` · ${esc(r.notes)}` : ''}</div></div>
+      <div class="li-sub">${esc(fmtDay(r.date, { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' }))} · ${esc(T?.label || r.type)}${r.goal_s ? ` · goal ${esc(fmtGoal(r.goal_s))}` : ''}${left >= 0 ? ` · in ${left} days` : ' · done'}${r.notes ? ` · ${esc(r.notes)}` : ''}</div></div>
       <button class="btn small ghost danger" data-race-remove="${esc(r.id)}" aria-label="Remove ${esc(r.name)}">Remove</button></div>`;
   }).join('')}</div>`;
 }
@@ -45,7 +47,9 @@ export function mountRacesCard(root, { get, save, bounds }) {
     e.preventDefault();
     const f = e.target;
     const { start, end } = bounds();
-    const r = { id: uid(), name: f.name.value.trim(), date: f.date.value, type: f.type.value, priority: f.priority.value, notes: f.notes.value.trim() };
+    const T = RACE_TYPES[f.type.value];
+    const goal_s = parseGoal(f.goal.value, T.sport !== 'swim' && (T.sport !== 'run' || T.km >= 21)) || null;
+    const r = { id: uid(), name: f.name.value.trim(), date: f.date.value, type: f.type.value, priority: f.priority.value, notes: f.notes.value.trim(), goal_s };
     if (!r.name || !r.date) return;
     if (start && r.date < start) { toast(`That's before your plan starts (${fmtDay(start)}).`); return; }
     if (end && r.date >= addDays(end, -6)) { toast('That’s in your Ironman’s final week. Pick an earlier race.'); return; }
